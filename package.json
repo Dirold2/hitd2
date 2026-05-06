@@ -1,0 +1,44 @@
+{
+  "name": "hitd2",
+  "version": "1.0.0",
+  "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "Dirold2",
+  "contributors": [
+    "Dirold2 (https://github.com/dirold2)"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dirold2/spd2.git"
+  },
+  "keywords": [
+    "hitmos",
+    "music",
+    "api",
+    "wrapper",
+    "hitmos.me"
+  ],
+  "dependencies": {
+    "crypto": "^1.0.1",
+    "hyperttp": "^0.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "chalk": "^5.6.2",
+    "dotenv-cli": "^11.0.0",
+    "prettier": "^3.8.3",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck:examples": "tsc -p tsconfig.examples.json",
+    "prepublish": "npm run build",
+    "format": "prettier --write .",
+    "smoke:track": "dotenv -e .env -- tsx example/track.ts",
+    "smoke:test": "dotenv -e .env -- tsx example/test.ts",
+    "smoke:summary": "tsx smoke-runner.ts"
+  }
+}
