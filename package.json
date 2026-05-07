@@ -1,6 +1,6 @@
 {
   "name": "hitd2",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,8 +21,8 @@
     "hitmos.me"
   ],
   "dependencies": {
-    "crypto": "^1.0.1",
-    "hyperttp": "^0.2.4"
+    "hyperttp": "^0.2.4",
+    "node-html-parser": "^7.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

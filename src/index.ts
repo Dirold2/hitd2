@@ -1,4 +1,3 @@
-import { default as HITApi } from "./api/HITApi.js";
-import * as Core from "./core/index.js";
-
-export { HITApi, Core };
+export { HITApi } from "./api/HITApi.js";
+export type { TrackMeta } from "./models/track.js";
+export type { TrackAudio } from "./models/audio.js";

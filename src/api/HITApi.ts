@@ -1,81 +1,441 @@
-import { HttpClientImproved, HttpClientOptions, Request } from "hyperttp";
-import { LRUCache } from "lru-cache";
-import { TrackMeta, TrackAudio, normalizeTrackId } from "../core/index.js";
-
-const DEFAULT_HTTP_CONFIG: HttpClientOptions = {
-  timeout: 15_000,
-  maxRetries: 2,
-  userAgent:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-  enableCache: false,
-  verbose: true,
-  allowHttp2: false,
-  maxResponseBytes: 100 * 1024 * 1024,
-  logger: (level, message, meta) => {
-    console.log(`[HTTP ${level.toUpperCase()}] ${message}`, meta || "");
-  },
-};
+import { parse } from "node-html-parser";
+import { HttpClientImproved, Request } from "hyperttp";
+import { Cache } from "../core/cache.js";
+import { DEFAULT_HTTP_CONFIG } from "../core/config.js";
+import { Retry } from "../core/retry.js";
+import {
+  normalizeQuery,
+  normalizeTrackId,
+  normalizeText,
+  normalizeTitle,
+} from "../core/normalize.js";
+import { sortTracksByScore } from "../core/scoring.js";
+import type { TrackMeta } from "../models/track.js";
+import type { TrackAudio } from "../models/audio.js";
+import { HttpClient } from "../core/http.js";
+import { ProviderRegistry } from "../providers/registry.js";
+import { HitmosProvider } from "../providers/hitmos.provider.js";
+import { HitmozProvider } from "../providers/hitmoz.provider.js";
+import type { SiteProvider } from "../providers/base.js";
+import { isValidAudioUrl, scoreAudioUrl } from "../core/filters.js";
 
 export class HITApi {
-  private http: HttpClientImproved;
-  private inflight = new Map<string, Promise<any>>();
+  private readonly http: HttpClient;
+  private readonly retry: Retry;
+  private readonly providers: ProviderRegistry;
 
-  private searchCache = new LRUCache<string, any>({ max: 200, ttl: 60_000 });
+  private sessionCookie?: string;
 
-  constructor(httpClient?: HttpClientImproved) {
-    this.http = httpClient || new HttpClientImproved(DEFAULT_HTTP_CONFIG);
+  private readonly trackCache = new Cache<TrackMeta>(1000, 15 * 60_000);
+  private readonly searchCache = new Cache<TrackMeta[]>(200, 10 * 60_000);
+  private readonly audioCache = new Cache<TrackAudio>(500, 50 * 60_000);
+
+  constructor(options?: {
+    httpClient?: HttpClientImproved;
+    sessionCookie?: string;
+  }) {
+    this.http = new HttpClient(options?.httpClient);
+    this.retry = new Retry({
+      httpClient: options?.httpClient,
+      sessionCookie: options?.sessionCookie,
+    });
+    this.sessionCookie = options?.sessionCookie;
+    this.providers = new ProviderRegistry([
+      new HitmosProvider(),
+      new HitmozProvider(),
+    ]);
+  }
+
+  setSessionCookie(cookie: string) {
+    this.sessionCookie = cookie;
+    this.retry.setSessionCookie(cookie);
+  }
+
+  private buildHeaders(host: string, accept: string): Record<string, string> {
+    return {
+      "User-Agent": DEFAULT_HTTP_CONFIG.userAgent,
+      Accept: accept,
+      Referer: `https://${host}/`,
+      ...(this.sessionCookie ? { Cookie: `sid=${this.sessionCookie}` } : {}),
+    };
+  }
+
+  private async fetchSearchHtml(host: string, query: string): Promise<string> {
+    const req = new Request({
+      scheme: "https",
+      host,
+      port: 443,
+      path: "/search",
+      query: { q: query },
+      headers: this.buildHeaders(host, "text/html"),
+    });
+
+    return this.retry.asText(
+      await this.retry.withRetry(() => this.http.getText(req), {
+        attempts: 3,
+        retryOn: (error) => {
+          const msg = String((error as any)?.message ?? error);
+          return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(
+            msg,
+          );
+        },
+      }),
+    );
+  }
+
+  private providerFor(host: string, html?: string): SiteProvider {
+    return this.providers.resolve(host, html);
+  }
+
+  private findTrackInSearchCache(id: string): TrackMeta | undefined {
+    for (const value of this.searchCacheValues()) {
+      const found = value.find((t) => t.id === id);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  private *searchCacheValues(): Iterable<TrackMeta[]> {
+    // small helper because Cache is opaque
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inner = (this.searchCache as any).cache;
+    if (!inner?.values) return;
+    for (const value of inner.values()) {
+      if (Array.isArray(value)) yield value as TrackMeta[];
+    }
+  }
+
+  async search(query: string, limit: number = 20): Promise<TrackMeta[]> {
+    const normalizedQuery = normalizeQuery(query);
+    const cacheKey = `${normalizedQuery}:${limit}`;
+
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) return cached;
+
+    const host = await this.retry.resolveHost();
+
+    const html = await this.fetchSearchHtml(host, query);
+
+    const root = parse(html);
+
+    const provider = this.providerFor(host, html);
+
+    const raw = provider.parseSearch(root);
+
+    // remove invalid
+    const valid = raw.filter((track) => {
+      if (!track.id) return false;
+      if (!track.title?.trim()) return false;
+      if (!track.artist?.trim()) return false;
+
+      return true;
+    });
+
+    // remove garbage
+    const filtered = valid.filter((track) => {
+      const title = normalizeTitle(track.title);
+
+      const blocked = [
+        "ringtone",
+        "рингтон",
+        "минус",
+        "remix",
+        "edit",
+        "nightcore",
+        "8d",
+        "bassboost",
+        "slowed",
+        "speed up",
+      ];
+
+      if (blocked.some((x) => title.includes(x))) {
+        return false;
+      }
+
+      // skip tiny audio
+      if (track.duration > 0 && track.duration < 45) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // dedupe by id
+    const dedupedById = new Map<string, TrackMeta>();
+
+    for (const track of filtered) {
+      if (!dedupedById.has(track.id)) {
+        dedupedById.set(track.id, track);
+      }
+    }
+
+    // dedupe by normalized title+artist
+    const canonical = new Map<string, TrackMeta>();
+
+    for (const track of dedupedById.values()) {
+      const key = [
+        normalizeTitle(track.artist),
+        normalizeTitle(track.title),
+      ].join(":");
+
+      const existing = canonical.get(key);
+
+      if (!existing) {
+        canonical.set(key, track);
+        continue;
+      }
+
+      // prefer canonical versions
+      const existingPenalty = existing.title.includes("(") ? 1 : 0;
+      const currentPenalty = track.title.includes("(") ? 1 : 0;
+
+      if (currentPenalty < existingPenalty) {
+        canonical.set(key, track);
+        continue;
+      }
+
+      // prefer realistic duration
+      const existingDurationScore = Math.abs(existing.duration - 180);
+      const currentDurationScore = Math.abs(track.duration - 180);
+
+      if (currentDurationScore < existingDurationScore) {
+        canonical.set(key, track);
+      }
+    }
+
+    const ranked = sortTracksByScore(normalizedQuery, [
+      ...canonical.values(),
+    ]).slice(0, limit);
+
+    this.searchCache.set(cacheKey, ranked);
+
+    for (const track of ranked) {
+      this.trackCache.set(track.id, track);
+    }
+
+    return ranked;
   }
 
   async getTrack(trackId: string): Promise<TrackMeta> {
     const id = normalizeTrackId(trackId);
-    return this.dedupe(`meta:${id}`, async () => {
-      return console.log(`ok`);
+
+    return this.retry.dedupe(`meta:${id}`, async () => {
+      const cached = this.trackCache.get(id);
+      const { html, root, host } = await this.retry.fetchTrackPage(id);
+      const provider = this.providerFor(host, html);
+
+      let title = cached?.title ?? "Unknown";
+      let artist = cached?.artist ?? "Unknown";
+      let duration = cached?.duration ?? 0;
+      let image = cached?.image ?? "";
+
+      if (title === "Unknown" || artist === "Unknown") {
+        const searchHit = this.findTrackInSearchCache(id);
+        if (searchHit) {
+          title = searchHit.title;
+          artist = searchHit.artist;
+          duration = duration || searchHit.duration;
+        }
+      }
+
+      const providerMeta = provider.parseTrackPage(root, host, id);
+      if (providerMeta.title && title === "Unknown") title = providerMeta.title;
+      if (providerMeta.artist && artist === "Unknown")
+        artist = providerMeta.artist;
+      if (providerMeta.duration && !duration) duration = providerMeta.duration;
+      if (providerMeta.image && !image) image = providerMeta.image;
+
+      if (title === "Unknown" || artist === "Unknown") {
+        const ogTitle =
+          root
+            .querySelector('meta[property="og:title"]')
+            ?.getAttribute("content")
+            ?.trim() || "";
+
+        if (ogTitle) {
+          const cleaned = normalizeText(ogTitle);
+          const parsed = this.retry.parseOgTitle(cleaned);
+
+          if (title === "Unknown" && parsed.title !== "Unknown")
+            title = parsed.title;
+          if (artist === "Unknown" && parsed.artist !== "Unknown")
+            artist = parsed.artist;
+        }
+      }
+
+      if (!duration) duration = this.retry.extractDuration(root);
+      if (!image) image = this.retry.extractImage(host, root);
+
+      const track: TrackMeta = {
+        id,
+        title,
+        artist,
+        duration,
+        uri: `hitmos:track:${id}`,
+        name: title,
+        duration_ms: duration * 1000,
+        explicit: false,
+        image,
+      };
+
+      this.trackCache.set(id, track);
+      return track;
     });
   }
 
   async getAudio(trackId: string): Promise<TrackAudio> {
-    const cacheKey = `getaudio:${trackId}`;
-    return this.dedupe(cacheKey, async () => {
-      return console.log(`ok`);
-    });
-  }
+    const id = normalizeTrackId(trackId);
 
-  async search(query: string, limit: number = 20) {
-    const cacheKey = `search:${query}:${limit}`;
-    return this.dedupe(cacheKey, async () => {
-      const req = new Request({
-        scheme: "https",
-        host: "rus.hitmoz.org",
-        port: 443,
-        path: `/search`,
-        query: {
-          q: query,
-        },
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+    const cached = this.audioCache.get(id);
+    if (cached) return cached;
 
-      const res = await this.http.get<any>(req, "json");
-      this.searchCache.set(cacheKey, res);
-      return res;
-    });
-  }
-
-  private async dedupe<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const existing = this.inflight.get(key);
-    if (existing) return existing;
-
-    const promise = (async () => {
+    return this.retry.dedupe(`audio:${id}`, async () => {
       try {
-        return await fn();
-      } finally {
-        this.inflight.delete(key);
-      }
-    })();
+        const { root, host } = await this.retry.fetchTrackPage(id);
 
-    this.inflight.set(key, promise);
-    return promise;
+        let audioUrl = "";
+
+        const candidates: string[] = [];
+
+        for (const script of root.querySelectorAll("script")) {
+          const content = script.textContent || "";
+
+          // все mp3 ссылки
+          const directMatches = [
+            ...content.matchAll(
+              /(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/g,
+            ),
+          ];
+
+          for (const match of directMatches) {
+            const candidate = match[1]
+              .replace(/\\/g, "")
+              .trim();
+
+            if (isValidAudioUrl(candidate)) {
+              candidates.push(candidate);
+            }
+          }
+
+          // JSON url
+          const jsonMatches = [
+            ...content.matchAll(/"url"\s*:\s*"([^"]+)"/g),
+          ];
+
+          for (const match of jsonMatches) {
+            const candidate = match[1]
+              .replace(/\\/g, "")
+              .trim();
+
+            if (
+              candidate.includes(".mp3") &&
+              isValidAudioUrl(candidate)
+            ) {
+              candidates.push(candidate);
+            }
+          }
+
+          // base64 hitmos mp3
+          const base64Matches = [
+            ...content.matchAll(
+              /["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/g,
+            ),
+          ];
+
+          for (const match of base64Matches) {
+            const candidate = `https://pl1.hitmos.fm${match[1]}`
+              .replace(/\\/g, "")
+              .trim();
+
+            if (isValidAudioUrl(candidate)) {
+              candidates.push(candidate);
+            }
+          }
+        }
+
+        // dedupe
+        const uniqueCandidates = [...new Set(candidates)];
+
+        // сортировка по score
+        uniqueCandidates.sort(
+          (a, b) => scoreAudioUrl(b) - scoreAudioUrl(a),
+        );
+
+        audioUrl = uniqueCandidates[0] || "";
+
+        // fallback API
+        if (!audioUrl) {
+          try {
+            const apiReq = new Request({
+              scheme: "https",
+              host,
+              port: 443,
+              path: `/api/track/${id}/play`,
+              headers: {
+                "User-Agent": DEFAULT_HTTP_CONFIG.userAgent,
+                Accept: "application/json",
+                Referer: `https://${host}/`,
+                ...(this.sessionCookie && {
+                  Cookie: `sid=${this.sessionCookie}`,
+                }),
+              },
+            });
+
+            const res = await this.retry.withRetry(
+              () => this.http.getJson(apiReq),
+              {
+                attempts: 2,
+                retryOn: (error) => {
+                  const msg = String((error as any)?.message ?? error);
+
+                  return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(
+                    msg,
+                  );
+                },
+              },
+            );
+
+            const url = (res as any)?.url;
+
+            if (url && isValidAudioUrl(url)) {
+              audioUrl = String(url)
+                .replace(/\\/g, "")
+                .trim();
+            }
+          } catch {
+            // ignore fallback errors
+          }
+        }
+
+        if (!audioUrl) {
+          throw new Error(
+            `Failed to extract audio URL for track ${id}`,
+          );
+        }
+
+        const result: TrackAudio = {
+          id,
+          url: audioUrl,
+          format: "mp3",
+          files: [
+            {
+              url: audioUrl,
+              format: "mp3",
+              bitrate: 320,
+            },
+          ],
+          urls: [audioUrl],
+          expiresAt: Date.now() + 3_600_000,
+        };
+
+        this.audioCache.set(id, result);
+
+        return result;
+      } catch (error) {
+        this.retry.invalidateHost();
+        throw error;
+      }
+    });
   }
 }
 
