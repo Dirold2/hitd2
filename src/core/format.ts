@@ -27,8 +27,7 @@ export class Format {
 
     if (!this.isBadVariant(t) && !t.includes("(")) return 0;
 
-    if (t.includes("2017") || t.includes("album") || t.includes("original"))
-      return 1;
+    if (t.includes("2017") || t.includes("album") || t.includes("original")) return 1;
 
     if (t.includes("версия") || t.includes("version")) return 2;
 
@@ -88,9 +87,7 @@ export class Format {
     if (a.includes(q)) score += 25;
 
     const isCanonical =
-      !this.isBadVariant(t) &&
-      !hardNoise.some((r) => r.test(t)) &&
-      !t.includes("(");
+      !this.isBadVariant(t) && !hardNoise.some((r) => r.test(t)) && !t.includes("(");
 
     if (isCanonical) {
       score += 30;

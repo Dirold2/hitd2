@@ -1,4 +1,4 @@
-import { HttpClientImproved, Request } from "hyperttp";
+import { HyperClient, Request } from "hyperttp";
 import { parse, type HTMLElement } from "node-html-parser";
 import { DEFAULT_HTTP_CONFIG } from "./config.js";
 import { normalizeText, normalizeTrackId } from "./normalize.js";
@@ -11,18 +11,14 @@ export interface HostCacheState {
 export class Retry {
   private readonly inflight = new Map<string, Promise<any>>();
   private readonly pageCache = new Map<string, string>();
-  private readonly http: HttpClientImproved;
+  private readonly http: HyperClient;
   private sessionCookie?: string;
 
   private hostPromise: Promise<string> | null = null;
   private hostCache: HostCacheState = { value: null, expiresAt: 0 };
 
-  constructor(options?: {
-    httpClient?: HttpClientImproved;
-    sessionCookie?: string;
-  }) {
-    this.http =
-      options?.httpClient ?? new HttpClientImproved(DEFAULT_HTTP_CONFIG);
+  constructor(options?: { httpClient?: HyperClient; sessionCookie?: string }) {
+    this.http = options?.httpClient ?? new HyperClient(DEFAULT_HTTP_CONFIG);
     this.sessionCookie = options?.sessionCookie;
   }
 
@@ -61,10 +57,7 @@ export class Retry {
         }
 
         const jitter = Math.floor(Math.random() * 150);
-        const delay = Math.min(
-          maxDelayMs,
-          baseDelayMs * 2 ** (attempt - 1) + jitter,
-        );
+        const delay = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1) + jitter);
         await this.sleep(delay);
       }
     }
@@ -85,7 +78,7 @@ export class Retry {
 
     const match = durationStr.match(/(\d+):(\d+)/);
     if (match) {
-      return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+      return parseInt(match[1]!, 10) * 60 + parseInt(match[2]!, 10);
     }
 
     return parseInt(durationStr, 10) || 0;
@@ -114,7 +107,7 @@ export class Retry {
 
     if (dashParts.length >= 2) {
       return {
-        artist: dashParts[0],
+        artist: dashParts[0]!,
         title: dashParts.slice(1).join(" - "),
       };
     }
@@ -142,10 +135,7 @@ export class Retry {
 
   extractImage(host: string, root: HTMLElement): string {
     const ogImage =
-      root
-        .querySelector('meta[property="og:image"]')
-        ?.getAttribute("content")
-        ?.trim() || "";
+      root.querySelector('meta[property="og:image"]')?.getAttribute("content")?.trim() || "";
 
     if (
       ogImage &&
@@ -156,16 +146,51 @@ export class Retry {
       return ogImage.startsWith("http") ? ogImage : `https://${host}${ogImage}`;
     }
 
-    const imgEl = root.querySelector(
-      ".section img[src*='cover'], .section img[src*='art'], img",
-    );
+    const imgEl = root.querySelector(".section img[src*='cover'], .section img[src*='art'], img");
 
     if (imgEl) {
       const src = imgEl.getAttribute("src") || "";
       if (src) return src.startsWith("http") ? src : `https://${host}${src}`;
     }
 
+    const rscImages = this.extractRscImage(root.innerHTML);
+    if (rscImages) return rscImages;
+
     return "";
+  }
+
+  private extractRscImage(html: string): string | null {
+    const imageUrls: string[] = [];
+    const rscRegex = /self\.__next_f\.push\(\[1,"(.*?)"\]\)/gs;
+    let match: RegExpExecArray | null;
+
+    while ((match = rscRegex.exec(html)) !== null) {
+      const payload = match[1]!
+        .replace(/\\u003c/g, "<")
+        .replace(/\\u003e/g, ">")
+        .replace(/\\u0026/g, "&")
+        .replace(/\\(["\\/bfnrt])/g, "$1")
+        .replace(/\\"/g, '"');
+
+      const urls = [...payload.matchAll(/"imageUrl":"(https?:\/\/[^"]+_large\.jpg)"/g)];
+
+      for (const u of urls) {
+        const url = u[1]!;
+        if (!url.includes("radio") && !url.includes("default") && !url.includes("android-chrome")) {
+          imageUrls.push(url);
+        }
+      }
+    }
+
+    if (imageUrls.length === 0) return null;
+
+    const albumArt = imageUrls.find((u) => u.includes("/album/"));
+    if (albumArt) return albumArt;
+
+    const artistArt = imageUrls.find((u) => u.includes("/collection/"));
+    if (artistArt) return artistArt;
+
+    return imageUrls[0]!;
   }
 
   async dedupe<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -201,9 +226,7 @@ export class Retry {
 
       const canonical =
         root.querySelector('link[rel="canonical"]')?.getAttribute("href") ||
-        root
-          .querySelector('meta[property="og:url"]')
-          ?.getAttribute("content") ||
+        root.querySelector('meta[property="og:url"]')?.getAttribute("content") ||
         "";
 
       if (canonical) {
@@ -223,11 +246,7 @@ export class Retry {
   async resolveHost(forceRefresh = false): Promise<string> {
     const now = Date.now();
 
-    if (
-      !forceRefresh &&
-      this.hostCache.value &&
-      this.hostCache.expiresAt > now
-    ) {
+    if (!forceRefresh && this.hostCache.value && this.hostCache.expiresAt > now) {
       return this.hostCache.value;
     }
 
@@ -287,8 +306,7 @@ export class Retry {
         path: `/song/${id}`,
         headers: {
           "User-Agent": DEFAULT_HTTP_CONFIG.userAgent,
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           Referer: `https://${host}/`,
           ...(this.sessionCookie && { Cookie: `sid=${this.sessionCookie}` }),
         },
@@ -299,9 +317,7 @@ export class Retry {
           attempts: 3,
           retryOn: (error) => {
             const msg = String((error as any)?.message ?? error);
-            return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(
-              msg,
-            );
+            return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(msg);
           },
         }),
       );

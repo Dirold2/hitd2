@@ -14,9 +14,7 @@ export class HitmozProvider implements SiteProvider {
 
   parseSearch(root: HTMLElement): TrackMeta[] {
     const results: TrackMeta[] = [];
-    const items = root.querySelectorAll(
-      "li.tracks__item, .tracks__item, li.relative",
-    );
+    const items = root.querySelectorAll("li.tracks__item, .tracks__item, li.relative");
 
     for (const item of items) {
       const songLink =
@@ -49,10 +47,9 @@ export class HitmozProvider implements SiteProvider {
         item.querySelector("time")?.textContent?.trim() ||
         "";
 
-      const duration = durationText.match(/(\d+):(\d+)/)
-        ? parseInt(durationText.split(":")[0], 10) * 60 +
-          parseInt(durationText.split(":")[1], 10)
-        : 0;
+      const parts = durationText.split(":");
+      const duration =
+        parts.length === 2 ? parseInt(parts[0]!, 10) * 60 + parseInt(parts[1]!, 10) : 0;
 
       results.push({
         id,
@@ -69,19 +66,12 @@ export class HitmozProvider implements SiteProvider {
     return results;
   }
 
-  parseTrackPage(
-    root: HTMLElement,
-    _host: string,
-    _trackId: string,
-  ): Partial<TrackMeta> {
+  parseTrackPage(root: HTMLElement, _host: string, _trackId: string): Partial<TrackMeta> {
     const title =
-      normalizeText(
-        root.querySelector(".track__title, h1, .title")?.textContent,
-      ) || "Unknown";
+      normalizeText(root.querySelector(".track__title, h1, .title")?.textContent) || "Unknown";
     const artist =
       normalizeText(
-        root.querySelector(".track__artist, .artist, a[href^='/artist/']")
-          ?.textContent,
+        root.querySelector(".track__artist, .artist, a[href^='/artist/']")?.textContent,
       ) || "Unknown";
 
     return { title, artist };
@@ -94,14 +84,13 @@ export class HitmozProvider implements SiteProvider {
     _trackId: string,
   ): string | null {
     const directMatch = html.match(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/);
-    if (directMatch) return directMatch[1].replace(/\\/g, "").trim();
+    if (directMatch?.[1]) return directMatch[1].replace(/\\/g, "").trim();
 
     const jsonMatch = html.match(/"url"\s*:\s*"([^"]+)"/);
-    if (jsonMatch) return jsonMatch[1].replace(/\\/g, "").trim();
+    if (jsonMatch?.[1]) return jsonMatch[1].replace(/\\/g, "").trim();
 
     const base64Match = html.match(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/);
-    if (base64Match)
-      return `https://pl1.hitmos.fm${base64Match[1]}`.replace(/\\/g, "").trim();
+    if (base64Match?.[1]) return `https://pl1.hitmos.fm${base64Match[1]}`.replace(/\\/g, "").trim();
 
     return null;
   }

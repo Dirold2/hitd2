@@ -15,9 +15,6 @@ export function normalizeTitle(input: string): string {
     .toLowerCase()
     .replace(/[(),.-]/g, " ")
     .replace(/\s+/g, " ")
-    .replace(
-      /\b(remix|edit|version|bassboosted|8d|slowed|speed up)\b/g,
-      "",
-    )
+    .replace(/\b(remix|edit|version|bassboosted|8d|slowed|speed up)\b/g, "")
     .trim();
 }

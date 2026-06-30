@@ -9,16 +9,7 @@ export interface SiteProvider {
 
   parseSearch(root: HTMLElement): TrackMeta[];
 
-  parseTrackPage(
-    root: HTMLElement,
-    host: string,
-    trackId: string,
-  ): Partial<TrackMeta>;
+  parseTrackPage(root: HTMLElement, host: string, trackId: string): Partial<TrackMeta>;
 
-  extractAudioUrl(
-    root: HTMLElement,
-    html: string,
-    host: string,
-    trackId: string,
-  ): string | null;
+  extractAudioUrl(root: HTMLElement, html: string, host: string, trackId: string): string | null;
 }

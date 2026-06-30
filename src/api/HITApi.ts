@@ -1,6 +1,6 @@
 import { parse } from "node-html-parser";
-import { HttpClientImproved, Request } from "hyperttp";
-import { Cache } from "../core/cache.js";
+import { HyperClient, Request } from "hyperttp";
+import { CacheManager } from "hcacher";
 import { DEFAULT_HTTP_CONFIG } from "../core/config.js";
 import { Retry } from "../core/retry.js";
 import {
@@ -26,24 +26,18 @@ export class HITApi {
 
   private sessionCookie?: string;
 
-  private readonly trackCache = new Cache<TrackMeta>(1000, 15 * 60_000);
-  private readonly searchCache = new Cache<TrackMeta[]>(200, 10 * 60_000);
-  private readonly audioCache = new Cache<TrackAudio>(500, 50 * 60_000);
+  private readonly trackCache = new CacheManager<TrackMeta>(1000, 15 * 60_000);
+  private readonly searchCache = new CacheManager<TrackMeta[]>(200, 10 * 60_000);
+  private readonly audioCache = new CacheManager<TrackAudio>(500, 50 * 60_000);
 
-  constructor(options?: {
-    httpClient?: HttpClientImproved;
-    sessionCookie?: string;
-  }) {
+  constructor(options?: { httpClient?: HyperClient; sessionCookie?: string }) {
     this.http = new HttpClient(options?.httpClient);
     this.retry = new Retry({
       httpClient: options?.httpClient,
       sessionCookie: options?.sessionCookie,
     });
     this.sessionCookie = options?.sessionCookie;
-    this.providers = new ProviderRegistry([
-      new HitmosProvider(),
-      new HitmozProvider(),
-    ]);
+    this.providers = new ProviderRegistry([new HitmosProvider(), new HitmozProvider()]);
   }
 
   setSessionCookie(cookie: string) {
@@ -75,9 +69,7 @@ export class HITApi {
         attempts: 3,
         retryOn: (error) => {
           const msg = String((error as any)?.message ?? error);
-          return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(
-            msg,
-          );
+          return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(msg);
         },
       }),
     );
@@ -173,10 +165,7 @@ export class HITApi {
     const canonical = new Map<string, TrackMeta>();
 
     for (const track of dedupedById.values()) {
-      const key = [
-        normalizeTitle(track.artist),
-        normalizeTitle(track.title),
-      ].join(":");
+      const key = [normalizeTitle(track.artist), normalizeTitle(track.title)].join(":");
 
       const existing = canonical.get(key);
 
@@ -203,9 +192,7 @@ export class HITApi {
       }
     }
 
-    const ranked = sortTracksByScore(normalizedQuery, [
-      ...canonical.values(),
-    ]).slice(0, limit);
+    const ranked = sortTracksByScore(normalizedQuery, [...canonical.values()]).slice(0, limit);
 
     this.searchCache.set(cacheKey, ranked);
 
@@ -240,26 +227,20 @@ export class HITApi {
 
       const providerMeta = provider.parseTrackPage(root, host, id);
       if (providerMeta.title && title === "Unknown") title = providerMeta.title;
-      if (providerMeta.artist && artist === "Unknown")
-        artist = providerMeta.artist;
+      if (providerMeta.artist && artist === "Unknown") artist = providerMeta.artist;
       if (providerMeta.duration && !duration) duration = providerMeta.duration;
       if (providerMeta.image && !image) image = providerMeta.image;
 
       if (title === "Unknown" || artist === "Unknown") {
         const ogTitle =
-          root
-            .querySelector('meta[property="og:title"]')
-            ?.getAttribute("content")
-            ?.trim() || "";
+          root.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim() || "";
 
         if (ogTitle) {
           const cleaned = normalizeText(ogTitle);
           const parsed = this.retry.parseOgTitle(cleaned);
 
-          if (title === "Unknown" && parsed.title !== "Unknown")
-            title = parsed.title;
-          if (artist === "Unknown" && parsed.artist !== "Unknown")
-            artist = parsed.artist;
+          if (title === "Unknown" && parsed.title !== "Unknown") title = parsed.title;
+          if (artist === "Unknown" && parsed.artist !== "Unknown") artist = parsed.artist;
         }
       }
 
@@ -301,16 +282,10 @@ export class HITApi {
           const content = script.textContent || "";
 
           // все mp3 ссылки
-          const directMatches = [
-            ...content.matchAll(
-              /(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/g,
-            ),
-          ];
+          const directMatches = [...content.matchAll(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/g)];
 
           for (const match of directMatches) {
-            const candidate = match[1]
-              .replace(/\\/g, "")
-              .trim();
+            const candidate = match[1]!.replace(/\\/g, "").trim();
 
             if (isValidAudioUrl(candidate)) {
               candidates.push(candidate);
@@ -318,34 +293,21 @@ export class HITApi {
           }
 
           // JSON url
-          const jsonMatches = [
-            ...content.matchAll(/"url"\s*:\s*"([^"]+)"/g),
-          ];
+          const jsonMatches = [...content.matchAll(/"url"\s*:\s*"([^"]+)"/g)];
 
           for (const match of jsonMatches) {
-            const candidate = match[1]
-              .replace(/\\/g, "")
-              .trim();
+            const candidate = match[1]!.replace(/\\/g, "").trim();
 
-            if (
-              candidate.includes(".mp3") &&
-              isValidAudioUrl(candidate)
-            ) {
+            if (candidate.includes(".mp3") && isValidAudioUrl(candidate)) {
               candidates.push(candidate);
             }
           }
 
           // base64 hitmos mp3
-          const base64Matches = [
-            ...content.matchAll(
-              /["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/g,
-            ),
-          ];
+          const base64Matches = [...content.matchAll(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/g)];
 
           for (const match of base64Matches) {
-            const candidate = `https://pl1.hitmos.fm${match[1]}`
-              .replace(/\\/g, "")
-              .trim();
+            const candidate = `https://pl1.hitmos.fm${match[1]}`.replace(/\\/g, "").trim();
 
             if (isValidAudioUrl(candidate)) {
               candidates.push(candidate);
@@ -357,9 +319,7 @@ export class HITApi {
         const uniqueCandidates = [...new Set(candidates)];
 
         // сортировка по score
-        uniqueCandidates.sort(
-          (a, b) => scoreAudioUrl(b) - scoreAudioUrl(a),
-        );
+        uniqueCandidates.sort((a, b) => scoreAudioUrl(b) - scoreAudioUrl(a));
 
         audioUrl = uniqueCandidates[0] || "";
 
@@ -381,26 +341,19 @@ export class HITApi {
               },
             });
 
-            const res = await this.retry.withRetry(
-              () => this.http.getJson(apiReq),
-              {
-                attempts: 2,
-                retryOn: (error) => {
-                  const msg = String((error as any)?.message ?? error);
+            const res = await this.retry.withRetry(() => this.http.getJson(apiReq), {
+              attempts: 2,
+              retryOn: (error) => {
+                const msg = String((error as any)?.message ?? error);
 
-                  return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(
-                    msg,
-                  );
-                },
+                return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(msg);
               },
-            );
+            });
 
             const url = (res as any)?.url;
 
             if (url && isValidAudioUrl(url)) {
-              audioUrl = String(url)
-                .replace(/\\/g, "")
-                .trim();
+              audioUrl = String(url).replace(/\\/g, "").trim();
             }
           } catch {
             // ignore fallback errors
@@ -408,9 +361,7 @@ export class HITApi {
         }
 
         if (!audioUrl) {
-          throw new Error(
-            `Failed to extract audio URL for track ${id}`,
-          );
+          throw new Error(`Failed to extract audio URL for track ${id}`);
         }
 
         const result: TrackAudio = {

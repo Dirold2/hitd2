@@ -1,11 +1,11 @@
-import { HttpClientImproved, Request } from "hyperttp";
+import { HyperClient, Request } from "hyperttp";
 import { DEFAULT_HTTP_CONFIG } from "./config.js";
 
 export class HttpClient {
-  private readonly client: HttpClientImproved;
+  private readonly client: HyperClient;
 
-  constructor(client?: HttpClientImproved) {
-    this.client = client ?? new HttpClientImproved(DEFAULT_HTTP_CONFIG);
+  constructor(client?: HyperClient) {
+    this.client = client ?? new HyperClient(DEFAULT_HTTP_CONFIG);
   }
 
   async getText(req: Request): Promise<string> {

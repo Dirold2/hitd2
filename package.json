@@ -1,44 +1,53 @@
 {
   "name": "hitd2",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "keywords": [
+    "api",
+    "hitmos",
+    "hitmos.me",
+    "music",
+    "wrapper"
+  ],
+  "license": "MIT",
   "author": "Dirold2",
   "contributors": [
     "Dirold2 (https://github.com/dirold2)"
   ],
-  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dirold2/spd2.git"
   },
-  "keywords": [
-    "hitmos",
-    "music",
-    "api",
-    "wrapper",
-    "hitmos.me"
-  ],
-  "dependencies": {
-    "hyperttp": "^0.2.5",
-    "node-html-parser": "^7.1.0"
-  },
-  "devDependencies": {
-    "@types/node": "^25.7.0",
-    "chalk": "^5.6.2",
-    "dotenv-cli": "^11.0.0",
-    "prettier": "^3.8.3",
-    "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
-  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
+    "dist": "d-dist",
+    "deploy": "npm run build && npm run dist",
+    "publish": "d-publish",
     "typecheck:examples": "tsc -p tsconfig.examples.json",
     "prepublish": "npm run build",
-    "format": "prettier --write .",
+    "lint": "oxlint src",
+    "lint:fix": "oxlint src --fix",
+    "format": "oxlint --fix . && oxfmt .",
     "smoke:track": "dotenv -e .env -- tsx example/track.ts",
     "smoke:test": "dotenv -e .env -- tsx example/test.ts",
     "smoke:summary": "tsx smoke-runner.ts"
+  },
+  "dependencies": {
+    "hcacher": "^0.1.0",
+    "hyperttp": "^0.4.11",
+    "node-html-parser": "^8.0.4"
+  },
+  "devDependencies": {
+    "@dirold2/dev-tools": "^1.1.0",
+    "@types/node": "^26.0.1",
+    "chalk": "^5.6.2",
+    "dotenv-cli": "^11.0.0",
+    "oxfmt": "^0.57.0",
+    "oxlint": "^1.72.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
   }
 }

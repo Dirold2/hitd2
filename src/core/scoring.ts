@@ -1,4 +1,4 @@
-import { TrackMeta } from "../models/track.js";
+import type { TrackMeta } from "../models/track.js";
 import { isBadTitle } from "./filters.js";
 import { normalizeQuery } from "./normalize.js";
 
@@ -7,8 +7,7 @@ export function getTrackType(title: string): number {
 
   if (!isBadTitle(t) && !t.includes("(")) return 0;
 
-  if (t.includes("2017") || t.includes("album") || t.includes("original"))
-    return 1;
+  if (t.includes("2017") || t.includes("album") || t.includes("original")) return 1;
 
   if (t.includes("version") || t.includes("версия")) return 2;
 
@@ -17,11 +16,7 @@ export function getTrackType(title: string): number {
   return 4;
 }
 
-export function scoreSearchCandidate(
-  title: string,
-  artist: string,
-  query: string,
-): number {
+export function scoreSearchCandidate(title: string, artist: string, query: string): number {
   const q = normalizeQuery(query);
   const t = normalizeQuery(title);
   const a = normalizeQuery(artist);
@@ -72,10 +67,7 @@ export function scoreSearchCandidate(
   return score;
 }
 
-export function sortTracksByScore(
-  query: string,
-  tracks: TrackMeta[],
-): TrackMeta[] {
+export function sortTracksByScore(query: string, tracks: TrackMeta[]): TrackMeta[] {
   return tracks
     .map((track) => ({
       track,

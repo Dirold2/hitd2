@@ -37,20 +37,12 @@ export function isValidAudioUrl(url: string): boolean {
   }
 
   // подозрительные generic mp3
-  if (
-    lower.includes("retro256") ||
-    lower.includes("128.mp3") ||
-    lower.includes("320.mp3")
-  ) {
+  if (lower.includes("retro256") || lower.includes("128.mp3") || lower.includes("320.mp3")) {
     return false;
   }
 
   // нормальные hitmos CDN
-  if (
-    lower.includes("hitmos") ||
-    lower.includes("track.mp3") ||
-    lower.includes("/mp3/")
-  ) {
+  if (lower.includes("hitmos") || lower.includes("track.mp3") || lower.includes("/mp3/")) {
     return true;
   }
 

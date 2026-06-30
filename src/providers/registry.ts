@@ -7,7 +7,7 @@ export class ProviderRegistry {
     return (
       this.providers.find((p) => p.hosts.includes(host)) ??
       this.providers.find((p) => p.matches(host, html)) ??
-      this.providers[0]
+      this.providers[0]!
     );
   }
 }
