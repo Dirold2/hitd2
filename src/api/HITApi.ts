@@ -1,4 +1,4 @@
-import { parse } from "node-html-parser";
+import { parseHtml } from "../core/html.js";
 import { HyperClient, Request } from "hyperttp";
 import { CacheManager } from "hcacher";
 import { DEFAULT_HTTP_CONFIG } from "../core/config.js";
@@ -108,7 +108,7 @@ export class HITApi {
 
     const html = await this.fetchSearchHtml(host, query);
 
-    const root = parse(html);
+    const root = parseHtml(html);
 
     const provider = this.providerFor(host, html);
 
@@ -203,12 +203,40 @@ export class HITApi {
     return ranked;
   }
 
-  async getTrack(trackId: string): Promise<TrackMeta> {
-    const id = normalizeTrackId(trackId);
+  private parseTrackUrl(url: string): { host: string; id: string } {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const provider = this.providerFor(host);
 
-    return this.retry.dedupe(`meta:${id}`, async () => {
-      const cached = this.trackCache.get(id);
-      const { html, root, host } = await this.retry.fetchTrackPage(id);
+    if (!provider.hosts.includes(host)) {
+      throw new Error(`Unsupported Hitmo host: ${host}`);
+    }
+
+    const id = parsed.pathname.match(/\/(?:song|track)\/([a-zA-Z0-9_-]+)/)?.[1];
+    if (!id) {
+      throw new Error(`Unsupported Hitmo track URL: ${url}`);
+    }
+
+    return { host, id: normalizeTrackId(id) };
+  }
+
+  async getTrackByUrl(url: string): Promise<TrackMeta> {
+    const { host, id } = this.parseTrackUrl(url);
+    return this.getTrack(id, host);
+  }
+
+  async getAudioByUrl(url: string): Promise<TrackAudio> {
+    const { host, id } = this.parseTrackUrl(url);
+    return this.getAudio(id, host);
+  }
+
+  async getTrack(trackId: string, preferredHost?: string): Promise<TrackMeta> {
+    const id = normalizeTrackId(trackId);
+    const cacheKey = preferredHost ? `${preferredHost}:${id}` : id;
+
+    return this.retry.dedupe(`meta:${cacheKey}`, async () => {
+      const cached = this.trackCache.get(cacheKey);
+      const { html, root, host } = await this.retry.fetchTrackPage(id, preferredHost);
       const provider = this.providerFor(host, html);
 
       let title = cached?.title ?? "Unknown";
@@ -259,23 +287,25 @@ export class HITApi {
         image,
       };
 
-      this.trackCache.set(id, track);
+      this.trackCache.set(cacheKey, track);
       return track;
     });
   }
 
-  async getAudio(trackId: string): Promise<TrackAudio> {
+  async getAudio(trackId: string, preferredHost?: string): Promise<TrackAudio> {
     const id = normalizeTrackId(trackId);
+    const cacheKey = preferredHost ? `${preferredHost}:${id}` : id;
 
-    const cached = this.audioCache.get(id);
+    const cached = this.audioCache.get(cacheKey);
     if (cached) return cached;
 
-    return this.retry.dedupe(`audio:${id}`, async () => {
+    return this.retry.dedupe(`audio:${cacheKey}`, async () => {
       try {
-        const { root, host } = await this.retry.fetchTrackPage(id);
+        const { html, root, host } = await this.retry.fetchTrackPage(id, preferredHost);
+        const provider = this.providerFor(host, html);
 
-        let audioUrl = "";
-
+        const extractedAudioUrl = provider.extractAudioUrl(root, html, host, id) ?? "";
+        let audioUrl = isValidAudioUrl(extractedAudioUrl) ? extractedAudioUrl : "";
         const candidates: string[] = [];
 
         for (const script of root.querySelectorAll("script")) {
@@ -321,7 +351,7 @@ export class HITApi {
         // сортировка по score
         uniqueCandidates.sort((a, b) => scoreAudioUrl(b) - scoreAudioUrl(a));
 
-        audioUrl = uniqueCandidates[0] || "";
+        audioUrl ||= uniqueCandidates[0] || "";
 
         // fallback API
         if (!audioUrl) {
@@ -379,7 +409,7 @@ export class HITApi {
           expiresAt: Date.now() + 3_600_000,
         };
 
-        this.audioCache.set(id, result);
+        this.audioCache.set(cacheKey, result);
 
         return result;
       } catch (error) {

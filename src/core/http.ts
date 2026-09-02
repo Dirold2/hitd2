@@ -9,10 +9,16 @@ export class HttpClient {
   }
 
   async getText(req: Request): Promise<string> {
-    return this.client.get<string>(req, "text");
+    return this.client.get<string>(req.url, {
+      headers: req.headers,
+      responseType: "text",
+    });
   }
 
   async getJson<T>(req: Request): Promise<T> {
-    return this.client.get<T>(req, "json");
+    return this.client.get<T>(req.url, {
+      headers: req.headers,
+      responseType: "json",
+    });
   }
 }

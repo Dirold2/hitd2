@@ -41,8 +41,13 @@ export function isValidAudioUrl(url: string): boolean {
     return false;
   }
 
-  // нормальные hitmos CDN
-  if (lower.includes("hitmos") || lower.includes("track.mp3") || lower.includes("/mp3/")) {
+  // нормальные CDN Hitmo
+  if (
+    lower.includes("hitmos") ||
+    /(?:^|\.)hitmoz\.org\/get\//.test(lower) ||
+    lower.includes("track.mp3") ||
+    lower.includes("/mp3/")
+  ) {
     return true;
   }
 

@@ -1,18 +1,36 @@
-import type { HTMLElement } from "node-html-parser";
+import type { HtmlElement } from "../core/html.js";
 import type { SiteProvider } from "./base.js";
 import type { TrackMeta } from "../models/track.js";
 import { normalizeText } from "../core/normalize.js";
 
+interface HitmozTrackData {
+  artist?: string;
+  img?: string;
+  title?: string;
+  url?: string;
+}
+
+function getTrackData(root: HtmlElement, trackId: string): HitmozTrackData | null {
+  const raw = root.querySelector(`[data-musid="track-id-${trackId}"]`)?.getAttribute("data-musmeta");
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as HitmozTrackData;
+  } catch {
+    return null;
+  }
+}
+
 export class HitmozProvider implements SiteProvider {
   readonly name = "hitmoz";
 
-  readonly hosts = ["rus.hitmoz.org", "hitmoz.org", "www.hitmoz.org"];
+  readonly hosts = ["ru.hitmoz.org", "rus.hitmoz.org", "hitmoz.org", "www.hitmoz.org"];
 
   matches(host: string, html?: string): boolean {
     return host.includes("hitmoz") || html?.includes("tracks__item") === true;
   }
 
-  parseSearch(root: HTMLElement): TrackMeta[] {
+  parseSearch(root: HtmlElement): TrackMeta[] {
     const results: TrackMeta[] = [];
     const items = root.querySelectorAll("li.tracks__item, .tracks__item, li.relative");
 
@@ -66,30 +84,39 @@ export class HitmozProvider implements SiteProvider {
     return results;
   }
 
-  parseTrackPage(root: HTMLElement, _host: string, _trackId: string): Partial<TrackMeta> {
+  parseTrackPage(root: HtmlElement, _host: string, trackId: string): Partial<TrackMeta> {
+    const trackData = getTrackData(root, trackId);
     const title =
-      normalizeText(root.querySelector(".track__title, h1, .title")?.textContent) || "Unknown";
+      normalizeText(trackData?.title) ||
+      normalizeText(root.querySelector(".track__title, h1, .title")?.textContent) ||
+      "Unknown";
     const artist =
+      normalizeText(trackData?.artist) ||
       normalizeText(
-        root.querySelector(".track__artist, .artist, a[href^='/artist/']")?.textContent,
-      ) || "Unknown";
+        root.querySelector(".track__artist, .artist, .track__desc, a[href^='/artist/']")?.textContent,
+      ) ||
+      "Unknown";
 
-    return { title, artist };
+    return { title, artist, image: trackData?.img };
   }
 
   extractAudioUrl(
-    _root: HTMLElement,
+    root: HtmlElement,
     html: string,
     _host: string,
-    _trackId: string,
+    trackId: string,
   ): string | null {
-    const directMatch = html.match(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/);
+    const trackData = getTrackData(root, trackId);
+    if (trackData?.url) return trackData.url.replace(/\\\//g, "/").replace(/\\/g, "").trim();
+
+    const normalizedHtml = html.replace(/\\\//g, "/");
+    const directMatch = normalizedHtml.match(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/);
     if (directMatch?.[1]) return directMatch[1].replace(/\\/g, "").trim();
 
-    const jsonMatch = html.match(/"url"\s*:\s*"([^"]+)"/);
+    const jsonMatch = normalizedHtml.match(/"url"\s*:\s*"([^"]+)"/);
     if (jsonMatch?.[1]) return jsonMatch[1].replace(/\\/g, "").trim();
 
-    const base64Match = html.match(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/);
+    const base64Match = normalizedHtml.match(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/);
     if (base64Match?.[1]) return `https://pl1.hitmos.fm${base64Match[1]}`.replace(/\\/g, "").trim();
 
     return null;

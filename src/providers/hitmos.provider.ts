@@ -1,4 +1,4 @@
-import type { HTMLElement } from "node-html-parser";
+import type { HtmlElement } from "../core/html.js";
 import type { SiteProvider } from "./base.js";
 import type { TrackMeta } from "../models/track.js";
 import { normalizeText } from "../core/normalize.js";
@@ -64,7 +64,7 @@ export class HitmosProvider implements SiteProvider {
     );
   }
 
-  parseSearch(root: HTMLElement): TrackMeta[] {
+  parseSearch(root: HtmlElement): TrackMeta[] {
     const rscTracks = parseRscTrackList(root.innerHTML);
 
     if (rscTracks && rscTracks.length > 0) {
@@ -83,7 +83,7 @@ export class HitmosProvider implements SiteProvider {
     return this.parseSearchLegacy(root);
   }
 
-  private parseSearchLegacy(root: HTMLElement): TrackMeta[] {
+  private parseSearchLegacy(root: HtmlElement): TrackMeta[] {
     const results: TrackMeta[] = [];
     const items = root.querySelectorAll("li.relative");
 
@@ -120,14 +120,14 @@ export class HitmosProvider implements SiteProvider {
     return results;
   }
 
-  parseTrackPage(root: HTMLElement, _host: string, _trackId: string): Partial<TrackMeta> {
+  parseTrackPage(root: HtmlElement, _host: string, _trackId: string): Partial<TrackMeta> {
     const ogTitle =
       root.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim() || "";
     const parsed = ogTitle ? { title: ogTitle } : {};
     return parsed;
   }
 
-  extractAudioUrl(_root: HTMLElement, html: string, _host: string, trackId: string): string | null {
+  extractAudioUrl(_root: HtmlElement, html: string, _host: string, trackId: string): string | null {
     const rscTracks = parseRscTrackList(html);
     if (rscTracks && rscTracks.length > 0) {
       const match = rscTracks.find((t) => String(t.id) === trackId && t.play);

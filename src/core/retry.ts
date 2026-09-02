@@ -1,5 +1,5 @@
 import { HyperClient, Request } from "hyperttp";
-import { parse, type HTMLElement } from "node-html-parser";
+import { parseHtml, type HtmlElement } from "./html.js";
 import { DEFAULT_HTTP_CONFIG } from "./config.js";
 import { normalizeText, normalizeTrackId } from "./normalize.js";
 
@@ -115,7 +115,7 @@ export class Retry {
     return { title: cleaned, artist: "Unknown" };
   }
 
-  extractDuration(root: HTMLElement): number {
+  extractDuration(root: HtmlElement): number {
     const candidates = [
       root.querySelector("span.shrink-0")?.textContent,
       root.querySelector(".track__fulltime")?.textContent,
@@ -133,7 +133,7 @@ export class Retry {
     return 0;
   }
 
-  extractImage(host: string, root: HTMLElement): string {
+  extractImage(host: string, root: HtmlElement): string {
     const ogImage =
       root.querySelector('meta[property="og:image"]')?.getAttribute("content")?.trim() || "";
 
@@ -222,7 +222,7 @@ export class Retry {
       });
 
       const html = await res.text();
-      const root = parse(html);
+      const root = parseHtml(html);
 
       const canonical =
         root.querySelector('link[rel="canonical"]')?.getAttribute("href") ||
@@ -286,18 +286,18 @@ export class Retry {
 
   async fetchTrackPage(
     trackId: string,
-  ): Promise<{ html: string; root: HTMLElement; host: string }> {
+    preferredHost?: string,
+  ): Promise<{ html: string; root: HtmlElement; host: string }> {
     const id = normalizeTrackId(trackId);
-    const cacheKey = `page:${id}`;
+    const host = preferredHost ?? (await this.resolveHost());
+    const cacheKey = `page:${host}:${id}`;
 
     const cached = this.pageCache.get(cacheKey);
     if (cached) {
-      const host = await this.resolveHost();
-      return { html: cached, root: parse(cached), host };
+      return { html: cached, root: parseHtml(cached), host };
     }
 
     try {
-      const host = await this.resolveHost();
 
       const req = new Request({
         scheme: "https",
@@ -313,17 +313,24 @@ export class Retry {
       });
 
       const html = this.asText(
-        await this.withRetry(() => this.http.get(req, "text"), {
-          attempts: 3,
-          retryOn: (error) => {
-            const msg = String((error as any)?.message ?? error);
-            return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(msg);
+        await this.withRetry(
+          () =>
+            this.http.get<string>(req.url, {
+              headers: req.headers,
+              responseType: "text",
+            }),
+          {
+            attempts: 3,
+            retryOn: (error) => {
+              const msg = String((error as any)?.message ?? error);
+              return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(msg);
+            },
           },
-        }),
+        ),
       );
 
       this.pageCache.set(cacheKey, html);
-      return { html, root: parse(html), host };
+      return { html, root: parseHtml(html), host };
     } catch (error) {
       this.invalidateHost();
       throw error;

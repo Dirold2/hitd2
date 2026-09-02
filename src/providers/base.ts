@@ -1,4 +1,4 @@
-import type { HTMLElement } from "node-html-parser";
+import type { HtmlElement } from "../core/html.js";
 import type { TrackMeta } from "../models/track.js";
 
 export interface SiteProvider {
@@ -7,9 +7,9 @@ export interface SiteProvider {
 
   matches(host: string, html?: string): boolean;
 
-  parseSearch(root: HTMLElement): TrackMeta[];
+  parseSearch(root: HtmlElement): TrackMeta[];
 
-  parseTrackPage(root: HTMLElement, host: string, trackId: string): Partial<TrackMeta>;
+  parseTrackPage(root: HtmlElement, host: string, trackId: string): Partial<TrackMeta>;
 
-  extractAudioUrl(root: HTMLElement, html: string, host: string, trackId: string): string | null;
+  extractAudioUrl(root: HtmlElement, html: string, host: string, trackId: string): string | null;
 }
