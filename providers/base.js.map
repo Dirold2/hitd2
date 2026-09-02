@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["base.js"],
+  "sourcesContent": ["export {};\n//# sourceMappingURL=base.js.map"],
+  "mappings": "aAAA",
+  "names": []
+}

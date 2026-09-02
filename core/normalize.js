@@ -1,0 +1,2 @@
+"use strict";export function normalizeText(e){return(e??"").replace(/\s+/g," ").trim()}export function normalizeQuery(e){return normalizeText(e).toLowerCase()}export function normalizeTrackId(e){return e.replace("hitmos:track:","").replace("hitmoz:track:","").trim()}export function normalizeTitle(e){return e.toLowerCase().replace(/[(),.-]/g," ").replace(/\s+/g," ").replace(/\b(remix|edit|version|bassboosted|8d|slowed|speed up)\b/g,"").trim()}
+//# sourceMappingURL=normalize.js.map

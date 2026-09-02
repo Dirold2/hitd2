@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/core/http.ts"],
+  "sourcesContent": ["import { HyperClient, Request } from \"hyperttp\";\nimport { DEFAULT_HTTP_CONFIG } from \"./config.js\";\n\nexport class HttpClient {\n  private readonly client: HyperClient;\n\n  constructor(client?: HyperClient) {\n    this.client = client ?? new HyperClient(DEFAULT_HTTP_CONFIG);\n  }\n\n  async getText(req: Request): Promise<string> {\n    return this.client.get<string>(req.url, {\n      headers: req.headers,\n      responseType: \"text\",\n    });\n  }\n\n  async getJson<T>(req: Request): Promise<T> {\n    return this.client.get<T>(req.url, {\n      headers: req.headers,\n      responseType: \"json\",\n    });\n  }\n}\n"],
+  "mappings": "aAAA,OAAS,eAAAA,MAA4B,WACrC,OAAS,uBAAAC,MAA2B,cAE9B,aAAO,UAAU,CACJ,OAEjB,YAAYC,EAAoB,CAC9B,KAAK,OAASA,GAAU,IAAIF,EAAYC,CAAmB,CAC7D,CAEA,MAAM,QAAQE,EAAY,CACxB,OAAO,KAAK,OAAO,IAAYA,EAAI,IAAK,CACtC,QAASA,EAAI,QACb,aAAc,OACf,CACH,CAEA,MAAM,QAAWA,EAAY,CAC3B,OAAO,KAAK,OAAO,IAAOA,EAAI,IAAK,CACjC,QAASA,EAAI,QACb,aAAc,OACf,CACH",
+  "names": ["HyperClient", "DEFAULT_HTTP_CONFIG", "client", "req"]
+}
