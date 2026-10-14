@@ -13,8 +13,14 @@ const api = new HITApi();
   });
   console.log(`\nTotal found: ${search.length}`);
 
-  const track = await api.getTrack(search[0].id);
-  const audio = await api.getAudio(search[0].id);
+  const firstTrack = search[0];
+  if (!firstTrack) {
+    console.log("No tracks found; skipping track and audio lookups.");
+    return;
+  }
+
+  const track = await api.getTrack(firstTrack.id);
+  const audio = await api.getAudio(firstTrack.id);
 
   console.log(track);
   console.log(audio);

@@ -16,7 +16,8 @@ interface RscTrack {
 
 function extractRscPayload(html: string): string[] {
   const payloads: string[] = [];
-  const scriptRegex = /<script[^>]*>self\.__next_f\.push\(\[1,"(.*?)"\]\)/gs;
+  const scriptRegex =
+    /<script[^>]*>\s*self\.__next_f\.push\(\s*\[\s*1\s*,\s*["'](.*?)["']\s*,?\s*\]\s*\)/gs;
   let match: RegExpExecArray | null;
 
   while ((match = scriptRegex.exec(html)) !== null) {
@@ -68,14 +69,26 @@ export class HitmosProvider implements SiteProvider {
     const rscTracks = parseRscTrackList(root.innerHTML);
 
     if (rscTracks && rscTracks.length > 0) {
-      return rscTracks.map((t) => ({
-        id: String(t.id),
-        title: normalizeText(t.title),
-        artist: normalizeText(t.artist),
-        duration: t.duration,
-        uri: `hitmos:track:${t.id}`,
-        name: normalizeText(t.title),
-        duration_ms: t.duration * 1000,
+      const linkedTrackIds = new Set(
+        root
+          .querySelectorAll('a[href^="/song/"]')
+          .map((link) => link.getAttribute("href")?.match(/^\/song\/([a-zA-Z0-9_-]+)$/)?.[1])
+          .filter((id): id is string => Boolean(id)),
+      );
+
+      const verifiedTracks =
+        linkedTrackIds.size > 0
+          ? rscTracks.filter((track) => linkedTrackIds.has(String(track.id)))
+          : rscTracks;
+
+      return verifiedTracks.map((track) => ({
+        id: String(track.id),
+        title: normalizeText(track.title),
+        artist: normalizeText(track.artist),
+        duration: track.duration,
+        uri: `hitmos:track:${track.id}`,
+        name: normalizeText(track.title),
+        duration_ms: track.duration * 1000,
         explicit: false,
       }));
     }
@@ -129,21 +142,8 @@ export class HitmosProvider implements SiteProvider {
 
   extractAudioUrl(_root: HtmlElement, html: string, _host: string, trackId: string): string | null {
     const rscTracks = parseRscTrackList(html);
-    if (rscTracks && rscTracks.length > 0) {
-      const match = rscTracks.find((t) => String(t.id) === trackId && t.play);
-      if (match?.play) return match.play;
-      if (rscTracks[0]?.play) return rscTracks[0].play;
-    }
+    const track = rscTracks?.find((candidate) => String(candidate.id) === trackId);
 
-    const directMatch = html.match(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/);
-    if (directMatch?.[1]) return directMatch[1].replace(/\\/g, "").trim();
-
-    const jsonMatch = html.match(/"url"\s*:\s*"([^"]+)"/);
-    if (jsonMatch?.[1]) return jsonMatch[1].replace(/\\/g, "").trim();
-
-    const base64Match = html.match(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/);
-    if (base64Match) return `https://pl1.hitmos.fm${base64Match[1]}`.replace(/\\/g, "").trim();
-
-    return null;
+    return track?.play?.replace(/\\/g, "").trim() || null;
   }
 }

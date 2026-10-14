@@ -11,7 +11,9 @@ interface HitmozTrackData {
 }
 
 function getTrackData(root: HtmlElement, trackId: string): HitmozTrackData | null {
-  const raw = root.querySelector(`[data-musid="track-id-${trackId}"]`)?.getAttribute("data-musmeta");
+  const raw = root
+    .querySelector(`[data-musid="track-id-${trackId}"]`)
+    ?.getAttribute("data-musmeta");
   if (!raw) return null;
 
   try {
@@ -93,32 +95,24 @@ export class HitmozProvider implements SiteProvider {
     const artist =
       normalizeText(trackData?.artist) ||
       normalizeText(
-        root.querySelector(".track__artist, .artist, .track__desc, a[href^='/artist/']")?.textContent,
+        root.querySelector(".track__artist, .artist, .track__desc, a[href^='/artist/']")
+          ?.textContent,
       ) ||
       "Unknown";
 
     return { title, artist, image: trackData?.img };
   }
 
-  extractAudioUrl(
-    root: HtmlElement,
-    html: string,
-    _host: string,
-    trackId: string,
-  ): string | null {
-    const trackData = getTrackData(root, trackId);
-    if (trackData?.url) return trackData.url.replace(/\\\//g, "/").replace(/\\/g, "").trim();
+  extractAudioUrl(root: HtmlElement, _html: string, host: string, trackId: string): string | null {
+    const rawUrl = getTrackData(root, trackId)?.url;
+    if (!rawUrl) return null;
 
-    const normalizedHtml = html.replace(/\\\//g, "/");
-    const directMatch = normalizedHtml.match(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/);
-    if (directMatch?.[1]) return directMatch[1].replace(/\\/g, "").trim();
+    const url = rawUrl.replace(/\\\//g, "/").replace(/\\/g, "").trim();
 
-    const jsonMatch = normalizedHtml.match(/"url"\s*:\s*"([^"]+)"/);
-    if (jsonMatch?.[1]) return jsonMatch[1].replace(/\\/g, "").trim();
-
-    const base64Match = normalizedHtml.match(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/);
-    if (base64Match?.[1]) return `https://pl1.hitmos.fm${base64Match[1]}`.replace(/\\/g, "").trim();
-
-    return null;
+    try {
+      return new URL(url, `https://${host}`).toString();
+    } catch {
+      return null;
+    }
   }
 }

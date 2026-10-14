@@ -27,6 +27,33 @@ async function testHitmosProvider(): Promise<void> {
     },
   ]);
   assert.deepEqual(provider.parseTrackPage(root, "hitmos.fm", "42"), { title: "RSC Song" });
+
+  const searchPayload = JSON.stringify({
+    list: [
+      { id: 42, artist: "RSC Artist", title: "RSC Song", duration: 210 },
+      { id: 404, artist: "Stale Artist", title: "Stale Song", duration: 210 },
+    ],
+    footer: [],
+  });
+  const searchRoot = parseHtml(
+    `<a href="/song/42">RSC Song</a><script>self.__next_f.push([1,${JSON.stringify(searchPayload)}])</script>`,
+  );
+
+  assert.deepEqual(
+    provider.parseSearch(searchRoot).map((track) => track.id),
+    ["42"],
+    "RSC results without a matching /song/<id> link must be excluded when links are present",
+  );
+
+  const rscOnlyRoot = parseHtml(
+    `<script>self.__next_f.push([1,${JSON.stringify(searchPayload)}])</script>`,
+  );
+
+  assert.deepEqual(
+    provider.parseSearch(rscOnlyRoot).map((track) => track.id),
+    ["42", "404"],
+    "RSC-only responses must remain searchable when no server-rendered track links are available",
+  );
 }
 
 async function testHitmozProvider(): Promise<void> {
@@ -55,7 +82,7 @@ async function testHitmozProvider(): Promise<void> {
   });
   assert.equal(
     provider.extractAudioUrl(root, html, "hitmoz.org", "moz-7"),
-    "https://cdn.example.test/moz-song.mp3",
+    "https://hitmoz.org/get/music/20230808/Moz_Artist_-_Moz_Song_moz-7.mp3",
   );
 }
 

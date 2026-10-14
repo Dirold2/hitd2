@@ -1,6 +1,9 @@
 import { HyperClient, Request } from "hyperttp";
+import { CacheManager } from "hcacher";
 import { parseHtml, type HtmlElement } from "./html.js";
 import { DEFAULT_HTTP_CONFIG } from "./config.js";
+import { TrackNotFoundError } from "./errors.js";
+import { HttpClient } from "./http.js";
 import { normalizeText, normalizeTrackId } from "./normalize.js";
 
 export interface HostCacheState {
@@ -9,16 +12,17 @@ export interface HostCacheState {
 }
 
 export class Retry {
-  private readonly inflight = new Map<string, Promise<any>>();
+  private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly pageCache = new Map<string, string>();
-  private readonly http: HyperClient;
+  private readonly missingTrackCache = new CacheManager<true>(500, 3 * 60_000);
+  private readonly http: HttpClient;
   private sessionCookie?: string;
 
   private hostPromise: Promise<string> | null = null;
   private hostCache: HostCacheState = { value: null, expiresAt: 0 };
 
   constructor(options?: { httpClient?: HyperClient; sessionCookie?: string }) {
-    this.http = options?.httpClient ?? new HyperClient(DEFAULT_HTTP_CONFIG);
+    this.http = new HttpClient(options?.httpClient);
     this.sessionCookie = options?.sessionCookie;
   }
 
@@ -195,7 +199,7 @@ export class Retry {
 
   async dedupe<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const existing = this.inflight.get(key);
-    if (existing) return existing;
+    if (existing) return existing as Promise<T>;
 
     const promise = (async () => {
       try {
@@ -292,48 +296,79 @@ export class Retry {
     const host = preferredHost ?? (await this.resolveHost());
     const cacheKey = `page:${host}:${id}`;
 
+    if (this.missingTrackCache.get(cacheKey)) {
+      throw new TrackNotFoundError(id, 404, host);
+    }
+
     const cached = this.pageCache.get(cacheKey);
     if (cached) {
       return { html: cached, root: parseHtml(cached), host };
     }
 
+    const req = new Request({
+      scheme: "https",
+      host,
+      port: 443,
+      path: `/song/${id}`,
+      headers: {
+        "User-Agent": DEFAULT_HTTP_CONFIG.userAgent,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        Referer: `https://${host}/`,
+        ...(this.sessionCookie && { Cookie: `sid=${this.sessionCookie}` }),
+      },
+    });
+
     try {
+      const response = await this.withRetry(
+        async () => {
+          const value = await this.http.getTextResponse(req);
 
-      const req = new Request({
-        scheme: "https",
-        host,
-        port: 443,
-        path: `/song/${id}`,
-        headers: {
-          "User-Agent": DEFAULT_HTTP_CONFIG.userAgent,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          Referer: `https://${host}/`,
-          ...(this.sessionCookie && { Cookie: `sid=${this.sessionCookie}` }),
+          if (value.status === 429 || value.status >= 500) {
+            throw new Error(`Track page request failed with HTTP ${value.status}`);
+          }
+
+          return value;
         },
-      });
-
-      const html = this.asText(
-        await this.withRetry(
-          () =>
-            this.http.get<string>(req.url, {
-              headers: req.headers,
-              responseType: "text",
-            }),
-          {
-            attempts: 3,
-            retryOn: (error) => {
-              const msg = String((error as any)?.message ?? error);
-              return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(msg);
-            },
-          },
-        ),
+        {
+          attempts: 3,
+          retryOn: (error) => this.isRetryableError(error),
+        },
       );
 
+      if (response.status === 404 || response.status === 410) {
+        this.missingTrackCache.set(cacheKey, true);
+        throw new TrackNotFoundError(id, response.status, host);
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch track ${id}: HTTP ${response.status}`);
+      }
+
+      const html = this.asText(response.data);
       this.pageCache.set(cacheKey, html);
       return { html, root: parseHtml(html), host };
     } catch (error) {
+      if (error instanceof TrackNotFoundError) throw error;
       this.invalidateHost();
       throw error;
     }
+  }
+
+  private isRetryableError(error: unknown): boolean {
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? Number((error as { status?: unknown }).status)
+        : 0;
+    const message = String(
+      typeof error === "object" && error !== null && "message" in error
+        ? (error as { message?: unknown }).message
+        : error,
+    );
+
+    return (
+      status === 429 ||
+      status >= 500 ||
+      /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(message)
+    );
   }
 }

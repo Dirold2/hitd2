@@ -54,7 +54,29 @@ Get full metadata for a track. Returns `TrackMeta`.
 
 ### `getAudio(trackId)`
 
-Extract best MP3 audio URL from track page. Returns `TrackAudio`.
+Extract a track-bound MP3 audio URL from its track page. Returns `TrackAudio`.
+
+If the track page returns HTTP `404` or `410`, `getAudio()` (and `getTrack()`) throws
+`TrackNotFoundError`. This error has `trackId`, `status`, and optional `host` properties.
+It is safe to handle it separately from transient transport failures:
+
+```ts
+import { TrackNotFoundError } from "hitd2";
+
+try {
+  await api.getAudio("80810006");
+} catch (error) {
+  if (error instanceof TrackNotFoundError) {
+    // The track is unavailable; no alternate/radio URL is returned.
+  } else {
+    throw error;
+  }
+}
+```
+
+Search results parsed from Hitmos RSC data are retained only when the same search page contains a
+matching `/song/<id>` route. The library does not fetch every result during search, so a track can
+still disappear between search and lookup; in that case callers receive `TrackNotFoundError`.
 
 ## Types
 

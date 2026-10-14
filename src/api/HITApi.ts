@@ -17,7 +17,8 @@ import { ProviderRegistry } from "../providers/registry.js";
 import { HitmosProvider } from "../providers/hitmos.provider.js";
 import { HitmozProvider } from "../providers/hitmoz.provider.js";
 import type { SiteProvider } from "../providers/base.js";
-import { isValidAudioUrl, scoreAudioUrl } from "../core/filters.js";
+import { isValidAudioUrl } from "../core/filters.js";
+import { TrackNotFoundError } from "../core/errors.js";
 
 export class HITApi {
   private readonly http: HttpClient;
@@ -306,52 +307,6 @@ export class HITApi {
 
         const extractedAudioUrl = provider.extractAudioUrl(root, html, host, id) ?? "";
         let audioUrl = isValidAudioUrl(extractedAudioUrl) ? extractedAudioUrl : "";
-        const candidates: string[] = [];
-
-        for (const script of root.querySelectorAll("script")) {
-          const content = script.textContent || "";
-
-          // все mp3 ссылки
-          const directMatches = [...content.matchAll(/(https?:\/\/[^\s"'<>]+\.mp3[^\s"'<>]*)/g)];
-
-          for (const match of directMatches) {
-            const candidate = match[1]!.replace(/\\/g, "").trim();
-
-            if (isValidAudioUrl(candidate)) {
-              candidates.push(candidate);
-            }
-          }
-
-          // JSON url
-          const jsonMatches = [...content.matchAll(/"url"\s*:\s*"([^"]+)"/g)];
-
-          for (const match of jsonMatches) {
-            const candidate = match[1]!.replace(/\\/g, "").trim();
-
-            if (candidate.includes(".mp3") && isValidAudioUrl(candidate)) {
-              candidates.push(candidate);
-            }
-          }
-
-          // base64 hitmos mp3
-          const base64Matches = [...content.matchAll(/["'](\/L[a-zA-Z0-9_=]+\.mp3)["']/g)];
-
-          for (const match of base64Matches) {
-            const candidate = `https://pl1.hitmos.fm${match[1]}`.replace(/\\/g, "").trim();
-
-            if (isValidAudioUrl(candidate)) {
-              candidates.push(candidate);
-            }
-          }
-        }
-
-        // dedupe
-        const uniqueCandidates = [...new Set(candidates)];
-
-        // сортировка по score
-        uniqueCandidates.sort((a, b) => scoreAudioUrl(b) - scoreAudioUrl(a));
-
-        audioUrl ||= uniqueCandidates[0] || "";
 
         // fallback API
         if (!audioUrl) {
@@ -413,7 +368,9 @@ export class HITApi {
 
         return result;
       } catch (error) {
-        this.retry.invalidateHost();
+        if (!(error instanceof TrackNotFoundError)) {
+          this.retry.invalidateHost();
+        }
         throw error;
       }
     });
