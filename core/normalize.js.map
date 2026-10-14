@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/core/normalize.ts"],
+  "sourcesContent": ["export function normalizeText(value?: string | null): string {\n  return (value ?? \"\").replace(/\\s+/g, \" \").trim();\n}\n\nexport function normalizeQuery(value: string): string {\n  return normalizeText(value).toLowerCase();\n}\n\nexport function normalizeTrackId(input: string): string {\n  return input.replace(\"hitmos:track:\", \"\").replace(\"hitmoz:track:\", \"\").trim();\n}\n\nexport function normalizeTitle(input: string): string {\n  return input\n    .toLowerCase()\n    .replace(/[(),.-]/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .replace(/\\b(remix|edit|version|bassboosted|8d|slowed|speed up)\\b/g, \"\")\n    .trim();\n}\n"],
+  "mappings": "aAAM,gBAAU,cAAcA,EAAqB,CACjD,OAAQA,GAAS,IAAI,QAAQ,OAAQ,GAAG,EAAE,KAAI,CAChD,CAEM,gBAAU,eAAeA,EAAa,CAC1C,OAAO,cAAcA,CAAK,EAAE,YAAW,CACzC,CAEM,gBAAU,iBAAiBC,EAAa,CAC5C,OAAOA,EAAM,QAAQ,gBAAiB,EAAE,EAAE,QAAQ,gBAAiB,EAAE,EAAE,KAAI,CAC7E,CAEM,gBAAU,eAAeA,EAAa,CAC1C,OAAOA,EACJ,YAAW,EACX,QAAQ,WAAY,GAAG,EACvB,QAAQ,OAAQ,GAAG,EACnB,QAAQ,2DAA4D,EAAE,EACtE,KAAI,CACT",
+  "names": ["value", "input"]
+}
