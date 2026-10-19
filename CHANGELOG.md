@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.3] — 2026-10-16
+
+- Including `list` and `tracks` arrays without a trailing `footer` field.
+- Add deterministic regression coverage for missing tracks, cache/retry behavior, and track-bound audio extraction without live Hitmo requests.
+
 ## [1.2.2] — 2026-10-07
 
 - Add exported `TrackNotFoundError` for track pages returning HTTP 404 or 410.

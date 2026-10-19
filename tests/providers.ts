@@ -54,6 +54,25 @@ async function testHitmosProvider(): Promise<void> {
     ["42", "404"],
     "RSC-only responses must remain searchable when no server-rendered track links are available",
   );
+
+  const currentRscRoot = parseHtml(
+    '<script>self.__next_f.push([1,"1:\\\"payload\\\",\\\"list\\\":[{\\\"id\\\":7,\\\"artist\\\":\\\"Face\\\",\\\"title\\\":\\\"Лабиринт\\\",\\\"duration\\\":169}]}]]"])</script>',
+  );
+
+  assert.deepEqual(
+    provider.parseSearch(currentRscRoot).map((track) => track.id),
+    ["7"],
+    "RSC lists must be parsed even when no footer follows the list",
+  );
+
+  const trackPageRsc =
+    '<script>self.__next_f.push([1,"1:\\\"payload\\\",\\\"tracks\\\":[{\\\"id\\\":10962226,\\\"artist\\\":\\\"Face\\\",\\\"title\\\":\\\"Лабиринт\\\",\\\"duration\\\":169,\\\"play\\\":\\\"https://plc1.hitmos.fm/face-labirint.mp3\\\"}]}]]"])</script>';
+
+  assert.equal(
+    provider.extractAudioUrl(parseHtml(trackPageRsc), trackPageRsc, "rus.hitmos.fm", "10962226"),
+    "https://plc1.hitmos.fm/face-labirint.mp3",
+    "track-page RSC payloads must read the selected track from a tracks array",
+  );
 }
 
 async function testHitmozProvider(): Promise<void> {

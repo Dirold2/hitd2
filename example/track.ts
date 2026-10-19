@@ -19,9 +19,13 @@ const api = new HITApi();
     return;
   }
 
-  const track = await api.getTrack(firstTrack.id);
-  const audio = await api.getAudio(firstTrack.id);
+  try {
+    const track = await api.getTrack(firstTrack.id);
+    const audio = await api.getAudio(firstTrack.id);
 
-  console.log(track);
-  console.log(audio);
+    console.log(track);
+    console.log(audio);
+  } catch (error) {
+    console.warn(`Selected track ${firstTrack.id} is no longer playable:`, error);
+  }
 })();

@@ -17,32 +17,92 @@ interface RscTrack {
 function extractRscPayload(html: string): string[] {
   const payloads: string[] = [];
   const scriptRegex =
-    /<script[^>]*>\s*self\.__next_f\.push\(\s*\[\s*1\s*,\s*["'](.*?)["']\s*,?\s*\]\s*\)/gs;
+    /<script[^>]*>\s*self\.__next_f\.push\(\s*\[\s*1\s*,\s*(["'])((?:\\.|(?!\1)[\s\S])*)\1\s*,?\s*\]\s*\)/g;
   let match: RegExpExecArray | null;
 
   while ((match = scriptRegex.exec(html)) !== null) {
-    payloads.push(
-      match[1]!
-        .replace(/\\u003c/g, "<")
-        .replace(/\\u003e/g, ">")
-        .replace(/\\u0026/g, "&")
-        .replace(/\\(["\\/bfnrt])/g, "$1")
-        .replace(/\\"/g, '"'),
-    );
+    const rawPayload = match[2]!;
+
+    try {
+      JSON.parse(rawPayload);
+      payloads.push(rawPayload);
+    } catch {
+      try {
+        payloads.push(JSON.parse(`"${rawPayload}"`));
+      } catch {
+        payloads.push(
+          rawPayload
+            .replace(/\\u003c/g, "<")
+            .replace(/\\u003e/g, ">")
+            .replace(/\\u0026/g, "&")
+            .replace(/\\(["\\/bfnrt])/g, "$1")
+            .replace(/\\"/g, '"'),
+        );
+      }
+    }
   }
 
   return payloads;
+}
+
+function extractJsonArray(source: string, start: number): string | null {
+  let depth = 0;
+  let escaped = false;
+  let inString = false;
+
+  for (let index = start; index < source.length; index++) {
+    const character = source[index]!;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === "[") {
+      depth += 1;
+    } else if (character === "]") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+
+  return null;
 }
 
 function parseRscTrackList(html: string): RscTrack[] | null {
   const payloads = extractRscPayload(html);
 
   for (const payload of payloads) {
-    const listMatch = payload.match(/"list":(\[.*?\]),\s*"footer"/);
-    if (listMatch) {
+    const trackArrayRegex = /"(?:list|tracks)":\[/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = trackArrayRegex.exec(payload)) !== null) {
+      const arrayStart = match.index + match[0].length - 1;
+      const rawList = extractJsonArray(payload, arrayStart);
+      if (!rawList) continue;
+
       try {
-        const tracks: RscTrack[] = JSON.parse(listMatch[1]!);
-        return tracks;
+        const tracks = JSON.parse(rawList) as RscTrack[];
+
+        if (
+          tracks.length > 0 &&
+          tracks.every(
+            (track) =>
+              typeof track.id === "number" &&
+              typeof track.artist === "string" &&
+              typeof track.title === "string",
+          )
+        ) {
+          return tracks;
+        }
       } catch {
         continue;
       }
