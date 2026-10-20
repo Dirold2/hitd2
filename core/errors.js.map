@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/core/errors.ts"],
+  "sourcesContent": ["export class TrackNotFoundError extends Error {\n  readonly trackId: string;\n  readonly host?: string;\n  readonly status: 404 | 410;\n\n  constructor(trackId: string, status: 404 | 410 = 404, host?: string) {\n    super(`Track ${trackId} was not found${host ? ` on ${host}` : \"\"} (HTTP ${status})`);\n    this.name = \"TrackNotFoundError\";\n    this.trackId = trackId;\n    this.host = host;\n    this.status = status;\n    Object.setPrototypeOf(this, new.target.prototype);\n  }\n}\n"],
+  "mappings": "aAAM,aAAO,2BAA2B,KAAK,CAClC,QACA,KACA,OAET,YAAYA,EAAiBC,EAAoB,IAAKC,EAAa,CACjE,MAAM,SAASF,CAAO,iBAAiBE,EAAO,OAAOA,CAAI,GAAK,EAAE,UAAUD,CAAM,GAAG,EACnF,KAAK,KAAO,qBACZ,KAAK,QAAUD,EACf,KAAK,KAAOE,EACZ,KAAK,OAASD,EACd,OAAO,eAAe,KAAM,WAAW,SAAS,CAClD",
+  "names": ["trackId", "status", "host"]
+}

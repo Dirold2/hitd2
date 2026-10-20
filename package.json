@@ -19,38 +19,12 @@
     "url": "https://github.com/dirold2/spd2.git"
   },
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc && esbuild 'dist/**/*.js' --outdir=dist --allow-overwrite --minify --sourcemap && d-build",
-    "dist": "d-dist",
-    "deploy": "npm run build && npm run dist",
-    "publish": "d-publish",
-    "typecheck:examples": "tsc -p tsconfig.examples.json",
-    "prepublish": "npm run build",
-    "lint": "oxlint src",
-    "lint:fix": "oxlint src --fix",
-    "format": "oxlint --fix . && oxfmt .",
-    "smoke:track": "dotenv -e .env -- tsx example/track.ts",
-    "test:providers": "node --import tsx tests/providers.ts",
-    "test:retry": "node --import tsx tests/retry.ts",
-    "test": "npm run test:providers && npm run test:retry",
-    "smoke:test": "dotenv -e .env -- tsx example/test.ts",
-    "smoke:summary": "tsx smoke-runner.ts"
-  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "dependencies": {
     "hcacher": "^0.3.0",
     "hyperttp": "^0.6.0",
     "node-html-parser": "^9.0.5"
   },
-  "devDependencies": {
-    "@dirold2/dev-tools": "^1.1.3",
-    "@types/node": "^26.6.5",
-    "chalk": "^6.0.1",
-    "dotenv-cli": "^11.0.0",
-    "oxfmt": "^0.74.0",
-    "oxlint": "^1.89.0",
-    "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
-  }
+  "private": false
 }
