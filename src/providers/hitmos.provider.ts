@@ -2,6 +2,7 @@ import type { HtmlElement } from "../core/html.js";
 import type { SiteProvider } from "./base.js";
 import type { TrackMeta } from "../models/track.js";
 import { normalizeText } from "../core/normalize.js";
+import { extractImageUrl } from "./image.js";
 
 interface RscTrack {
   id: number;
@@ -125,7 +126,7 @@ export class HitmosProvider implements SiteProvider {
     );
   }
 
-  parseSearch(root: HtmlElement): TrackMeta[] {
+  parseSearch(root: HtmlElement, host: string): TrackMeta[] {
     const rscTracks = parseRscTrackList(root.innerHTML);
 
     if (rscTracks && rscTracks.length > 0) {
@@ -141,16 +142,36 @@ export class HitmosProvider implements SiteProvider {
           ? rscTracks.filter((track) => linkedTrackIds.has(String(track.id)))
           : rscTracks;
 
-      return verifiedTracks.map((track) => ({
-        id: String(track.id),
-        title: normalizeText(track.title),
-        artist: normalizeText(track.artist),
-        duration: track.duration,
-        uri: `hitmos:track:${track.id}`,
-        name: normalizeText(track.title),
-        duration_ms: track.duration * 1000,
-        explicit: false,
-      }));
+      const imagesById = new Map<string, string>();
+
+      for (const item of root.querySelectorAll("li.relative")) {
+        const href = item
+          .querySelector('a[href^="/song/"]')
+          ?.getAttribute("href");
+
+        const id = href?.match(/^\/song\/([a-zA-Z0-9_-]+)$/)?.[1];
+        if (!id) continue;
+
+        const image = extractImageUrl(item, `https://${host}`);
+        if (image) imagesById.set(id, image);
+      }
+
+      return verifiedTracks.map((track) => {
+        const id = String(track.id);
+        const image = imagesById.get(id);
+
+        return {
+          id,
+          title: normalizeText(track.title),
+          artist: normalizeText(track.artist),
+          ...(image ? { image } : {}),
+          duration: track.duration,
+          uri: `hitmos:track:${id}`,
+          name: normalizeText(track.title),
+          duration_ms: track.duration * 1000,
+          explicit: false,
+        };
+      });
     }
 
     return this.parseSearchLegacy(root);

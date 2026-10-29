@@ -1,8 +1,23 @@
 # Changelog
 
+## [1.2.5] - 2026-10-29
+
+- Improve search-result validation, ranking, de-duplication, and caching; reject obviously non-musical results while retaining legitimate alternate versions.
+- Improve structured `artist - title` searches: require both artist and full title matches, and exclude candidates with no relevant query terms.
+- Add fixture-free scoring coverage for artist/title searches and generic relevance filtering.
+- Keep separate host-aware caches for search metadata, track metadata, and audio URLs; return defensive copies so callers cannot mutate cached values.
+- Accept supported Hitmo track URLs directly in `getTrack()` and `getAudio()`, with validation of protocols, hosts, credentials, and track IDs.
+- Extract and normalize cover URLs from Hitmos and Hitmoz search results, including lazy-loaded and `srcset` images.
+- Harden request construction and session-cookie handling, and update `hyperttp` to `0.6.2` plus development tooling dependencies.
+- Add examples for search and direct track/audio URL resolution.
+
+## [1.2.4] — 2026-10-20
+
+- Upgrade to `hyperttp` 0.6 and update development tooling dependencies.
+
 ## [1.2.3] — 2026-10-16
 
-- Including `list` and `tracks` arrays without a trailing `footer` field.
+- Support Hitmos RSC `list` and `tracks` arrays when they are not followed by a `footer` field.
 - Add deterministic regression coverage for missing tracks, cache/retry behavior, and track-bound audio extraction without live Hitmo requests.
 
 ## [1.2.2] — 2026-10-07

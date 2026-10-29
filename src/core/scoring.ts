@@ -2,6 +2,58 @@ import type { TrackMeta } from "../models/track.js";
 import { isBadTitle } from "./filters.js";
 import { normalizeQuery } from "./normalize.js";
 
+interface StructuredQuery {
+  artistTokens: string[];
+  titleTokens: string[];
+}
+
+function tokenize(value: string): string[] {
+  return normalizeQuery(value)
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function parseStructuredQuery(query: string): StructuredQuery | undefined {
+  const match = normalizeQuery(query).match(/^(.+?)\s+[-–—]\s+(.+)$/u);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const artistTokens = tokenize(match[1]!);
+  const titleTokens = tokenize(match[2]!);
+
+  return artistTokens.length > 0 && titleTokens.length > 0
+    ? { artistTokens, titleTokens }
+    : undefined;
+}
+
+function containsAllTokens(value: string, expectedTokens: string[]): boolean {
+  const tokens = new Set(tokenize(value));
+
+  return expectedTokens.every((token) => tokens.has(token));
+}
+
+function hasQueryTokenMatch(track: TrackMeta, queryTokens: string[]): boolean {
+  const haystack = `${normalizeQuery(track.artist)} ${normalizeQuery(track.title)}`;
+
+  return queryTokens.some((token) => haystack.includes(token));
+}
+
+function matchesQueryIntent(track: TrackMeta, query: string): boolean {
+  const structuredQuery = parseStructuredQuery(query);
+
+  if (structuredQuery) {
+    return (
+      containsAllTokens(track.artist, structuredQuery.artistTokens) &&
+      containsAllTokens(track.title, structuredQuery.titleTokens)
+    );
+  }
+
+  return hasQueryTokenMatch(track, tokenize(query));
+}
+
 export function getTrackType(title: string): number {
   const t = normalizeQuery(title);
 
@@ -46,7 +98,7 @@ export function scoreSearchCandidate(title: string, artist: string, query: strin
   if (hardNoise.some((r) => r.test(t))) score -= 60;
   if (badVariants.some((r) => r.test(t))) score -= 35;
 
-  const qTokens = q.split(/\s+/).filter(Boolean);
+  const qTokens = tokenize(q);
   const hits = qTokens.filter((x) => haystack.includes(x)).length;
 
   score += hits * 10;
@@ -73,7 +125,10 @@ export function sortTracksByScore(query: string, tracks: TrackMeta[]): TrackMeta
       track,
       score: scoreSearchCandidate(track.title, track.artist, query),
     }))
-    .filter(({ score, track }) => score >= 8 && !isBadTitle(track.title))
+    .filter(
+      ({ score, track }) =>
+        score >= 8 && !isBadTitle(track.title) && matchesQueryIntent(track, query),
+    )
     .sort((a, b) => b.score - a.score || b.track.duration - a.track.duration)
     .map(({ track }) => track);
 }

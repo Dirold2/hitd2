@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { parseHtml } from "../src/core/html.js";
 import { HitmosProvider } from "../src/providers/hitmos.provider.js";
 import { HitmozProvider } from "../src/providers/hitmoz.provider.js";
+import { Retry } from "../src/core/retry.js";
 
 async function readFixture(name: string): Promise<string> {
   return readFile(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)), "utf8");
@@ -13,8 +14,10 @@ async function testHitmosProvider(): Promise<void> {
   const html = await readFixture("hitmos.html");
   const provider = new HitmosProvider();
   const root = parseHtml(html);
+  const retry = new Retry()
+  const host = await retry.resolveHost();
 
-  assert.deepEqual(provider.parseSearch(root), [
+  assert.deepEqual(provider.parseSearch(root, host), [
     {
       id: "42",
       title: "RSC Song",
@@ -40,7 +43,7 @@ async function testHitmosProvider(): Promise<void> {
   );
 
   assert.deepEqual(
-    provider.parseSearch(searchRoot).map((track) => track.id),
+    provider.parseSearch(searchRoot, host).map((track) => track.id),
     ["42"],
     "RSC results without a matching /song/<id> link must be excluded when links are present",
   );
@@ -50,7 +53,7 @@ async function testHitmosProvider(): Promise<void> {
   );
 
   assert.deepEqual(
-    provider.parseSearch(rscOnlyRoot).map((track) => track.id),
+    provider.parseSearch(rscOnlyRoot, host).map((track) => track.id),
     ["42", "404"],
     "RSC-only responses must remain searchable when no server-rendered track links are available",
   );
@@ -60,7 +63,7 @@ async function testHitmosProvider(): Promise<void> {
   );
 
   assert.deepEqual(
-    provider.parseSearch(currentRscRoot).map((track) => track.id),
+    provider.parseSearch(currentRscRoot, host).map((track) => track.id),
     ["7"],
     "RSC lists must be parsed even when no footer follows the list",
   );
@@ -79,16 +82,19 @@ async function testHitmozProvider(): Promise<void> {
   const html = await readFixture("hitmoz.html");
   const provider = new HitmozProvider();
   const root = parseHtml(html);
+  const retry = new Retry()
+  const host = await retry.resolveHost();
 
   assert(provider.hosts.includes("ru.hitmoz.org"));
   assert(provider.matches("ru.hitmoz.org"));
-  assert.deepEqual(provider.parseSearch(root), [
+  assert.deepEqual(provider.parseSearch(root, host), [
     {
       id: "moz-7",
       title: "Moz Song",
       artist: "Moz Artist",
       duration: 185,
       uri: "hitmoz:track:moz-7",
+      image: "https://cdn.example.test/moz-song.jpg",
       name: "Moz Song",
       duration_ms: 185_000,
       explicit: false,

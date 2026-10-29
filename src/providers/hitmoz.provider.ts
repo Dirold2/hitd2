@@ -2,6 +2,7 @@ import type { HtmlElement } from "../core/html.js";
 import type { SiteProvider } from "./base.js";
 import type { TrackMeta } from "../models/track.js";
 import { normalizeText } from "../core/normalize.js";
+import { extractImageUrl, normalizeImageUrl } from "./image.js";
 
 interface HitmozTrackData {
   artist?: string;
@@ -27,12 +28,11 @@ export class HitmozProvider implements SiteProvider {
   readonly name = "hitmoz";
 
   readonly hosts = ["ru.hitmoz.org", "rus.hitmoz.org", "hitmoz.org", "www.hitmoz.org"];
-
   matches(host: string, html?: string): boolean {
     return host.includes("hitmoz") || html?.includes("tracks__item") === true;
   }
 
-  parseSearch(root: HtmlElement): TrackMeta[] {
+  parseSearch(root: HtmlElement, host: string): TrackMeta[] {
     const results: TrackMeta[] = [];
     const items = root.querySelectorAll("li.tracks__item, .tracks__item, li.relative");
 
@@ -71,12 +71,27 @@ export class HitmozProvider implements SiteProvider {
       const duration =
         parts.length === 2 ? parseInt(parts[0]!, 10) * 60 + parseInt(parts[1]!, 10) : 0;
 
+      const rawMeta = item.getAttribute("data-musmeta");
+      let image: string | undefined;
+
+      if (rawMeta) {
+        try {
+          const metadata = JSON.parse(rawMeta) as HitmozTrackData;
+          image = normalizeImageUrl(metadata.img, `https://${host}`);
+        } catch {
+          //
+        }
+      }
+
+      image ??= extractImageUrl(item, "https://hitmoz.org");
+
       results.push({
         id,
         title,
         artist,
         duration,
         uri: `hitmoz:track:${id}`,
+        image,
         name: title,
         duration_ms: duration * 1000,
         explicit: false,

@@ -7,7 +7,7 @@ export interface SiteProvider {
 
   matches(host: string, html?: string): boolean;
 
-  parseSearch(root: HtmlElement): TrackMeta[];
+  parseSearch(root: HtmlElement, host: string): TrackMeta[];
 
   parseTrackPage(root: HtmlElement, host: string, trackId: string): Partial<TrackMeta>;
 
