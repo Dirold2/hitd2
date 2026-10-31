@@ -1,3 +1,4 @@
+import { providerForHost } from "../core/hosts.js";
 import type { SiteProvider } from "./base.js";
 
 export class ProviderRegistry {
@@ -5,7 +6,7 @@ export class ProviderRegistry {
 
   resolve(host: string, html?: string): SiteProvider {
     return (
-      this.providers.find((p) => p.hosts.includes(host)) ??
+      this.providers.find((p) => p.name === providerForHost(host)) ??
       this.providers.find((p) => p.matches(host, html)) ??
       this.providers[0]!
     );

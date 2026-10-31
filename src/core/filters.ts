@@ -1,3 +1,5 @@
+import { isTrustedAudioHost } from "./hosts.js";
+
 export function isBadTitle(title: string): boolean {
   const t = title.toLowerCase();
 
@@ -24,6 +26,23 @@ export function isBadTitle(title: string): boolean {
 }
 
 export function isValidAudioUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username !== "" ||
+    parsed.password !== ""
+  ) {
+    return false;
+  }
+
+  if (!isTrustedAudioHost(parsed.hostname)) return false;
+
   const lower = url.toLowerCase();
 
   // мусорные радио/стрим URL
@@ -41,17 +60,7 @@ export function isValidAudioUrl(url: string): boolean {
     return false;
   }
 
-  // нормальные CDN Hitmo
-  if (
-    lower.includes("hitmos") ||
-    /(?:^|\.)hitmoz\.org\/get\//.test(lower) ||
-    lower.includes("track.mp3") ||
-    lower.includes("/mp3/")
-  ) {
-    return true;
-  }
-
-  return false;
+  return true;
 }
 
 export function scoreAudioUrl(url: string): number {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { HITApi } from "../src/api/HITApi.js";
-import { TrackNotFoundError } from "../src/core/errors.js";
+import { TrackNotFoundError, AudioExtractionError } from "../src/core/errors.js";
 import { parseHtml } from "../src/core/html.js";
 import { Retry } from "../src/core/retry.js";
 import { HitmosProvider } from "../src/providers/hitmos.provider.js";
@@ -13,10 +13,12 @@ type TextResponse = {
 
 class FakeHyperClient {
   calls = 0;
+  urls: string[] = [];
 
   readonly rest = {
     get: async <T>(_url: string): Promise<{ data: T; ok: boolean; status: number }> => {
       this.calls += 1;
+      this.urls.push(_url);
       const response = this.responses.shift();
 
       if (!response) throw new Error("No mocked response left");
@@ -133,6 +135,129 @@ async function testValidTrackPageStillExtractsAudio(): Promise<void> {
   assert.equal(client.calls, 1);
 }
 
+async function testCurrentHitmozDomain(): Promise<void> {
+  const html = `<div data-musid="track-id-42" data-musmeta='{"title":"Song","artist":"Artist","url":"/get/music/song.mp3"}'></div>`;
+  const client = new FakeHyperClient([{ status: 200, data: html }]);
+  const api = new HITApi({ httpClient: client as never });
+  const audio = await api.getAudioByUrl("https://rue.hitmoz.org/song/42");
+  assert.equal(audio.url, "https://rue.hitmoz.org/get/music/song.mp3");
+  assert.equal(new URL(client.urls[0]!).hostname, "rue.hitmoz.org");
+}
+
+async function testSearchPreservesSourceHost(): Promise<void> {
+  const searchHtml = `<li class="tracks__item"><a href="/song/42">Song</a><span class="track__artist">Artist</span></li>`;
+  const trackHtml = `<div data-musid="track-id-42" data-musmeta='{"url":"/get/music/song.mp3"}'></div>`;
+  const client = new FakeHyperClient([
+    { status: 200, data: searchHtml },
+    { status: 200, data: trackHtml },
+  ]);
+  const api = new HITApi({ httpClient: client as never });
+  const retry = (api as unknown as { retry: Retry }).retry;
+  retry.resolveHost = async () => "rue.hitmoz.org";
+  const tracks = await api.search("Artist - Song");
+  assert.equal(tracks[0]?.id, "42");
+  retry.resolveHost = async () => "rus.hitmos.fm";
+  const audio = await api.getAudio("42");
+  assert.equal(audio.url, "https://rue.hitmoz.org/get/music/song.mp3");
+  assert.equal(new URL(client.urls[1]!).hostname, "rue.hitmoz.org");
+}
+
+async function testHostResolution(): Promise<void> {
+  const retry = new Retry();
+  const probes: string[] = [];
+  retry.probeHost = async (host) => {
+    probes.push(host);
+    return host === "rue.hitmoz.org" ? host : null;
+  };
+  assert.equal(await retry.resolveHost(), "rue.hitmoz.org");
+  assert.equal(probes[0], "rus.hitmos.fm");
+  const count = probes.length;
+  assert.equal(await retry.resolveHost(), "rue.hitmoz.org");
+  assert.equal(probes.length, count, "successful host must be cached");
+
+  retry.probeHost = async () => null;
+  await assert.rejects(() => retry.resolveHost(true), /No available Hitmo hosts/);
+}
+
+async function testHostProbeRejectsErrorsAndForeignHosts(): Promise<void> {
+  const originalFetch = globalThis.fetch;
+  const retry = new Retry();
+  const cases = [
+    { status: 503, url: "https://rus.hitmos.fm/", body: "error", expected: null },
+    { status: 200, url: "https://evil.test/", body: "", expected: null },
+    {
+      status: 200,
+      url: "https://rue.hitmoz.org/",
+      body: '<link rel="canonical" href="https://evil.test/">',
+      expected: "rue.hitmoz.org",
+    },
+    {
+      status: 200,
+      url: "https://rus.hitmos.fm/",
+      body: '<link rel="canonical" href="https://rue.hitmoz.org/">',
+      expected: "rus.hitmos.fm",
+    },
+  ];
+  try {
+    for (const item of cases) {
+      globalThis.fetch = (async () => {
+        const response = new Response(item.body, { status: item.status });
+        Object.defineProperty(response, "url", { value: item.url });
+        return response;
+      }) as typeof fetch;
+      assert.equal(await retry.probeHost("rus.hitmos.fm"), item.expected);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function testSearchHttpErrorsAreNotCached(): Promise<void> {
+  const client = new FakeHyperClient([
+    { status: 404, data: errorPageWithRadio },
+    {
+      status: 200,
+      data: '<li class="tracks__item"><a href="/song/42">Song</a><span class="track__artist">Artist</span></li>',
+    },
+  ]);
+  const api = new HITApi({ httpClient: client as never });
+  const retry = (api as unknown as { retry: Retry }).retry;
+  retry.resolveHost = async () => "rue.hitmoz.org";
+  await assert.rejects(() => api.search("Artist - Song"), /HTTP 404/);
+  assert.equal((await api.search("Artist - Song"))[0]?.id, "42");
+  assert.equal(client.calls, 2);
+}
+
+async function testUnverifiedAudioIsRejected(): Promise<void> {
+  const client = new FakeHyperClient([{ status: 200, data: validTrackPage }]);
+  const api = new HITApi({ httpClient: client as never });
+  const retry = (api as unknown as { retry: Retry }).retry;
+  let invalidations = 0;
+  retry.invalidateHost = () => {
+    invalidations += 1;
+  };
+  await assert.rejects(
+    () => api.getAudio("99", "rus.hitmos.fm"),
+    (error: unknown) => {
+      assert(error instanceof AudioExtractionError);
+      assert.equal(error.trackId, "99");
+      assert.equal(error.code, "AUDIO_NOT_VERIFIED");
+      return true;
+    },
+  );
+  assert.equal(client.calls, 1, "missing selected data must not call an unverified play API");
+  assert.equal(invalidations, 0, "missing audio is not a mirror outage");
+  await assert.rejects(
+    () => api.getAudioByUrl("https://rus.hitmos.fm/song/42/extra"),
+    /Unsupported Hitmo track URL/,
+  );
+}
+await testUnverifiedAudioIsRejected();
+await testSearchHttpErrorsAreNotCached();
+await testCurrentHitmozDomain();
+await testSearchPreservesSourceHost();
+await testHostResolution();
+await testHostProbeRejectsErrorsAndForeignHosts();
 await test404IsNotCachedAndUsesNegativeCache();
 await testGetAudioThrowsTrackNotFound();
 testErrorPageMp3IsIgnored();

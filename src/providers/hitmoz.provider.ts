@@ -1,6 +1,7 @@
 import type { HtmlElement } from "../core/html.js";
 import type { SiteProvider } from "./base.js";
 import type { TrackMeta } from "../models/track.js";
+import { HITMOZ_HOSTS, isDomainHost } from "../core/hosts.js";
 import { normalizeText } from "../core/normalize.js";
 import { extractImageUrl, normalizeImageUrl } from "./image.js";
 
@@ -12,24 +13,37 @@ interface HitmozTrackData {
 }
 
 function getTrackData(root: HtmlElement, trackId: string): HitmozTrackData | null {
-  const raw = root
-    .querySelector(`[data-musid="track-id-${trackId}"]`)
-    ?.getAttribute("data-musmeta");
-  if (!raw) return null;
-
-  try {
-    return JSON.parse(raw) as HitmozTrackData;
-  } catch {
-    return null;
+  const records = root
+    .querySelectorAll("[data-musid]")
+    .filter((item) => item.getAttribute("data-musid") === `track-id-${trackId}`);
+  const parsed: HitmozTrackData[] = [];
+  for (const item of records) {
+    try {
+      const value: unknown = JSON.parse(item.getAttribute("data-musmeta") ?? "null");
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const record = value as Record<string, unknown>;
+      if (
+        ["artist", "title", "img", "url"].some(
+          (key) => record[key] !== undefined && typeof record[key] !== "string",
+        )
+      )
+        return null;
+      parsed.push(record as HitmozTrackData);
+    } catch {
+      return null;
+    }
   }
+  if (!parsed.length) return null;
+  if (new Set(parsed.map((item) => item.url).filter(Boolean)).size > 1) return null;
+  return parsed.find((item) => item.url) ?? parsed[0]!;
 }
 
 export class HitmozProvider implements SiteProvider {
   readonly name = "hitmoz";
 
-  readonly hosts = ["ru.hitmoz.org", "rus.hitmoz.org", "hitmoz.org", "www.hitmoz.org"];
+  readonly hosts = HITMOZ_HOSTS;
   matches(host: string, html?: string): boolean {
-    return host.includes("hitmoz") || html?.includes("tracks__item") === true;
+    return isDomainHost(host, "hitmoz.org") || html?.includes("tracks__item") === true;
   }
 
   parseSearch(root: HtmlElement, host: string): TrackMeta[] {
@@ -38,20 +52,25 @@ export class HitmozProvider implements SiteProvider {
 
     for (const item of items) {
       const songLink =
-        item.querySelector('a[href^="/song/"]') ||
+        item.querySelector('a[href^="/song/"], a[href*="/song/"]') ||
         item.querySelector(".track__title a") ||
         item.querySelector(".track__title");
 
       if (!songLink) continue;
 
-      const href = songLink.getAttribute?.("href") || "";
-      const id =
-        href.match(/\/song\/([a-zA-Z0-9_-]+)/)?.[1] ||
-        item.getAttribute("data-id") ||
-        item.getAttribute("data-track-id") ||
-        "";
-
+      const href = songLink.getAttribute("href") || "";
+      let route: URL;
+      try {
+        route = new URL(href, `https://${host}`);
+      } catch {
+        continue;
+      }
+      if (route.origin !== `https://${host}` || route.search || route.hash) continue;
+      const id = route.pathname.match(/^\/song\/([a-zA-Z0-9_-]+)\/?$/)?.[1];
       if (!id) continue;
+      const declaredId = item.getAttribute("data-id") || item.getAttribute("data-track-id");
+      const musid = item.getAttribute("data-musid");
+      if ((declaredId && declaredId !== id) || (musid && musid !== `track-id-${id}`)) continue;
 
       const artistLink =
         item.querySelector('a[href^="/artist/"]') ||
@@ -83,7 +102,7 @@ export class HitmozProvider implements SiteProvider {
         }
       }
 
-      image ??= extractImageUrl(item, "https://hitmoz.org");
+      image ??= extractImageUrl(item, `https://${host}`);
 
       results.push({
         id,
@@ -101,28 +120,21 @@ export class HitmozProvider implements SiteProvider {
     return results;
   }
 
-  parseTrackPage(root: HtmlElement, _host: string, trackId: string): Partial<TrackMeta> {
+  parseTrackPage(root: HtmlElement, host: string, trackId: string): Partial<TrackMeta> {
     const trackData = getTrackData(root, trackId);
-    const title =
-      normalizeText(trackData?.title) ||
-      normalizeText(root.querySelector(".track__title, h1, .title")?.textContent) ||
-      "Unknown";
-    const artist =
-      normalizeText(trackData?.artist) ||
-      normalizeText(
-        root.querySelector(".track__artist, .artist, .track__desc, a[href^='/artist/']")
-          ?.textContent,
-      ) ||
-      "Unknown";
-
-    return { title, artist, image: trackData?.img };
+    if (!trackData) return {};
+    return {
+      title: normalizeText(trackData.title),
+      artist: normalizeText(trackData.artist),
+      image: normalizeImageUrl(trackData.img, `https://${host}`),
+    };
   }
 
   extractAudioUrl(root: HtmlElement, _html: string, host: string, trackId: string): string | null {
     const rawUrl = getTrackData(root, trackId)?.url;
     if (!rawUrl) return null;
 
-    const url = rawUrl.replace(/\\\//g, "/").replace(/\\/g, "").trim();
+    const url = rawUrl.trim();
 
     try {
       return new URL(url, `https://${host}`).toString();

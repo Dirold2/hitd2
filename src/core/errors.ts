@@ -12,3 +12,15 @@ export class TrackNotFoundError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+/** The page did not provide one unambiguous, track-bound trusted audio URL. */
+export class AudioExtractionError extends Error {
+  readonly code = "AUDIO_NOT_VERIFIED";
+  constructor(
+    readonly trackId: string,
+    readonly host: string,
+  ) {
+    super(`Failed to extract verified audio URL for track ${trackId} on ${host}`);
+    this.name = "AudioExtractionError";
+  }
+}

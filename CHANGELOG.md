@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.0] - 2026-11-01
+
+- Require exact normalized artist/title intent for structured searches and all whole-word tokens for plain queries; retain explicitly requested alternate versions.
+- Preserve version distinctions during search deduplication and rank before duplicate selection.
+- Read all Hitmos RSC track arrays and reject conflicting audio URLs for the requested ID.
+- Validate Hitmoz search routes against declared IDs and use only selected-track metadata for track-page parsing.
+- Export `AudioExtractionError` for missing or ambiguous verified audio; remove the unverified play-API fallback and preserve active hosts for extraction failures.
+- Support `rue.hitmoz.org` alongside `rus.hitmos.fm` and legacy aliases using shared host lists.
+- Configure domain/TLD migrations with provider-specific `HITD2_MIRRORS` and exact CDN trust via `HITD2_AUDIO_HOSTS`; retain `HITD2_HOSTS` as an ordered discovery override and built-in defaults when unset.
+- Accept new `hitmos.fm` and `hitmoz.org` subdomains in direct track URLs and host discovery without package updates; enforce domain boundaries when selecting providers.
+- Validate host-probe status and redirect/canonical domains, bound probe duration, and reject discovery when no host is available.
+- Preserve search-source hosts for subsequent ID-based lookups and isolate cached search metadata by host.
+- Propagate search HTTP failures rather than caching error pages as empty search results.
+- Validate audio URL protocols, credentials, and domain boundaries; reject lookalike domains.
+- Resolve relative Hitmoz cover URLs against the source host.
+- Remove live host discovery from provider fixture tests; add offline regression coverage for environment configuration, discovery order, source preservation, track/version matching, malformed metadata, conflicting audio URLs, and unsafe routes.
+
 ## [1.2.5] - 2026-10-29
 
 - Improve search-result validation, ranking, de-duplication, and caching; reject obviously non-musical results while retaining legitimate alternate versions.

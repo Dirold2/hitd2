@@ -1,119 +1,139 @@
 import type { TrackMeta } from "../models/track.js";
 import { isBadTitle } from "./filters.js";
-import { normalizeQuery } from "./normalize.js";
 
 interface StructuredQuery {
-  artistTokens: string[];
-  titleTokens: string[];
+  artist: string;
+  title: string;
+}
+
+function normalize(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
 function tokenize(value: string): string[] {
-  return normalizeQuery(value)
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .split(/\s+/)
-    .filter(Boolean);
+  return normalize(value).split(" ").filter(Boolean);
 }
 
 function parseStructuredQuery(query: string): StructuredQuery | undefined {
-  const match = normalizeQuery(query).match(/^(.+?)\s+[-–—]\s+(.+)$/u);
+  const match = query.normalize("NFKC").match(/^(.+?)\s+[-–—]\s+(.+)$/u);
+  if (!match) return undefined;
 
-  if (!match) {
-    return undefined;
-  }
+  const artist = normalize(match[1]!);
+  const title = normalize(match[2]!);
+  return artist && title ? { artist, title } : undefined;
+}
 
-  const artistTokens = tokenize(match[1]!);
-  const titleTokens = tokenize(match[2]!);
+function matchesArtist(artist: string, expected: string): boolean {
+  if (normalize(artist) === expected) return true;
 
-  return artistTokens.length > 0 && titleTokens.length > 0
-    ? { artistTokens, titleTokens }
-    : undefined;
+  // Only explicit collaboration separators introduce participant identities.
+  return artist
+    .normalize("NFKC")
+    .split(/\s+(?:feat\.?|ft\.?|featuring|and)\s+|\s*&\s*/iu)
+    .some((participant) => normalize(participant) === expected);
 }
 
 function containsAllTokens(value: string, expectedTokens: string[]): boolean {
   const tokens = new Set(tokenize(value));
-
-  return expectedTokens.every((token) => tokens.has(token));
+  return expectedTokens.length > 0 && expectedTokens.every((token) => tokens.has(token));
 }
 
-function hasQueryTokenMatch(track: TrackMeta, queryTokens: string[]): boolean {
-  const haystack = `${normalizeQuery(track.artist)} ${normalizeQuery(track.title)}`;
-
-  return queryTokens.some((token) => haystack.includes(token));
-}
-
-function matchesQueryIntent(track: TrackMeta, query: string): boolean {
-  const structuredQuery = parseStructuredQuery(query);
-
-  if (structuredQuery) {
-    return (
-      containsAllTokens(track.artist, structuredQuery.artistTokens) &&
-      containsAllTokens(track.title, structuredQuery.titleTokens)
-    );
+function matchesQueryIntent(title: string, artist: string, query: string): boolean {
+  const structured = parseStructuredQuery(query);
+  if (structured) {
+    return matchesArtist(artist, structured.artist) && normalize(title) === structured.title;
   }
+  return containsAllTokens(`${artist} ${title}`, tokenize(query));
+}
 
-  return hasQueryTokenMatch(track, tokenize(query));
+const variantTerms = [
+  "live",
+  "concert",
+  "concert version",
+  "лайв",
+  "концерт",
+  "концертная версия",
+  "remix",
+  "ремикс",
+  "mix",
+  "cover",
+  "кавер",
+  "instrumental",
+  "инструментал",
+  "karaoke",
+  "караоке",
+  "минус",
+  "acoustic",
+  "акустика",
+  "акустическая",
+  "version",
+  "версия",
+  "edit",
+  "remaster",
+  "remastered",
+  "рингтон",
+  "rington",
+  "8d",
+  "bass boost",
+  "bass boosted",
+  "nightcore",
+  "slowed",
+  "sped up",
+  "lyrics",
+  "текст",
+  "vk",
+  "tiktok",
+  "instagram",
+];
+
+function variants(value: string): string[] {
+  const normalized = ` ${normalize(value)} `;
+  return variantTerms.filter((term) => normalized.includes(` ${term} `));
+}
+
+function allowsBadTitle(title: string, query: string): boolean {
+  if (!isBadTitle(title.normalize("NFKC"))) return true;
+
+  // Artist names must not implicitly authorize a remix/cover of the requested song.
+  const requestedTitle = parseStructuredQuery(query)?.title ?? query;
+  const requested = new Set(variants(requestedTitle));
+  const actual = variants(title);
+  return actual.length > 0 && actual.every((variant) => requested.has(variant));
 }
 
 export function getTrackType(title: string): number {
-  const t = normalizeQuery(title);
-
-  if (!isBadTitle(t) && !t.includes("(")) return 0;
-
-  if (t.includes("2017") || t.includes("album") || t.includes("original")) return 1;
-
-  if (t.includes("version") || t.includes("версия")) return 2;
-
-  if (/\(([^)]*)\)/.test(t)) return 3;
-
+  const t = normalize(title);
+  if (variants(title).length > 0) return 4;
+  if (
+    containsAllTokens(t, ["2017"]) ||
+    containsAllTokens(t, ["album"]) ||
+    containsAllTokens(t, ["original"])
+  )
+    return 1;
+  if (!isBadTitle(title) && !/[([]/u.test(title)) return 0;
+  if (/[([]/u.test(title)) return 3;
   return 4;
 }
 
 export function scoreSearchCandidate(title: string, artist: string, query: string): number {
-  const q = normalizeQuery(query);
-  const t = normalizeQuery(title);
-  const a = normalizeQuery(artist);
-  const haystack = `${a} ${t}`;
+  if (!matchesQueryIntent(title, artist, query) || !allowsBadTitle(title, query)) {
+    return -1000;
+  }
 
-  let score = 0;
-
-  const hardNoise = [
-    /популярн(ое|ый)\s*вк/i,
-    /\bvk\b/i,
-    /tiktok/i,
-    /instagram/i,
-    /8d/i,
-    /bass\s*boost/i,
-    /nightcore/i,
-    /slowed/i,
-    /sped\s*up/i,
-    /lyrics|текст/i,
-    /radio edit/i,
-  ];
-
-  const badVariants = [
-    /\b(минус|instrumental|karaoke|cover|remix|mix|rington|рингтон)\b/i,
-    /\(([^)]*(минус|remix|cover|instrumental|8d)[^)]*)\)/i,
-  ];
-
-  if (hardNoise.some((r) => r.test(t))) score -= 60;
-  if (badVariants.some((r) => r.test(t))) score -= 35;
-
-  const qTokens = tokenize(q);
-  const hits = qTokens.filter((x) => haystack.includes(x)).length;
-
-  score += hits * 10;
+  const structured = parseStructuredQuery(query);
+  const q = structured?.title ?? normalize(query);
+  const t = normalize(title);
+  const a = normalize(artist);
+  let score = tokenize(query).length * 10;
 
   if (t === q) score += 120;
-  if (t.startsWith(q)) score += 70;
-  if (t.includes(q)) score += 40;
-  if (a.includes(q)) score += 25;
-
-  const type = getTrackType(title);
-  score += (4 - type) * 20;
-
-  const baseTitle = t.replace(/\([^)]*\)/g, "").trim();
-  if (baseTitle === q) score += 15;
-
+  if (a === q) score += 25;
+  score += (4 - getTrackType(title)) * 20;
   if (t.length < 40) score += 5;
 
   return score;
@@ -125,10 +145,7 @@ export function sortTracksByScore(query: string, tracks: TrackMeta[]): TrackMeta
       track,
       score: scoreSearchCandidate(track.title, track.artist, query),
     }))
-    .filter(
-      ({ score, track }) =>
-        score >= 8 && !isBadTitle(track.title) && matchesQueryIntent(track, query),
-    )
+    .filter(({ score }) => score >= 8)
     .sort((a, b) => b.score - a.score || b.track.duration - a.track.duration)
     .map(({ track }) => track);
 }

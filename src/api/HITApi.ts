@@ -4,12 +4,7 @@ import { CacheManager } from "hcacher";
 import { parseHtml } from "../core/html.js";
 import { DEFAULT_HTTP_CONFIG } from "../core/config.js";
 import { Retry } from "../core/retry.js";
-import {
-  normalizeQuery,
-  normalizeTrackId,
-  normalizeText,
-  normalizeTitle,
-} from "../core/normalize.js";
+import { normalizeQuery, normalizeTrackId, normalizeText } from "../core/normalize.js";
 import { sortTracksByScore } from "../core/scoring.js";
 import { HttpClient } from "../core/http.js";
 import { ProviderRegistry } from "../providers/registry.js";
@@ -17,7 +12,8 @@ import { HitmosProvider } from "../providers/hitmos.provider.js";
 import { HitmozProvider } from "../providers/hitmoz.provider.js";
 import type { SiteProvider } from "../providers/base.js";
 import { isValidAudioUrl } from "../core/filters.js";
-import { TrackNotFoundError } from "../core/errors.js";
+import { isSupportedHost } from "../core/hosts.js";
+import { TrackNotFoundError, AudioExtractionError } from "../core/errors.js";
 
 import type { TrackMeta } from "../models/track.js";
 import type { TrackAudio } from "../models/audio.js";
@@ -42,14 +38,7 @@ const AUDIO_URL_TTL = 60 * 60_000;
 const MIN_TRACK_DURATION_SECONDS = 45;
 const MAX_TRACK_DURATION_SECONDS = 60 * 60;
 
-const TRACK_ID_PATTERN = /\/(?:song|track)\/([a-zA-Z0-9_-]+)/;
-
-const NOISE_TITLE_PATTERNS = [
-  /\bringtone\b/i,
-  /\bnightcore\b/i,
-  /\bbass[\s-]*boost(?:ed)?\b/i,
-  /\b8d(?:\s+audio)?\b/i,
-];
+const TRACK_ID_PATTERN = /^\/(?:song|track)\/([a-zA-Z0-9_-]+)\/?$/;
 
 const VERSION_TITLE_PATTERN =
   /\b(?:remix|live|radio edit|extended|instrumental|karaoke|nightcore|slowed|sped[\s-]*up|acoustic)\b/i;
@@ -68,20 +57,6 @@ function getErrorMessage(error: unknown): string {
 
 function isRetryableError(error: unknown): boolean {
   return /timeout|ECONNRESET|429|5\d\d|network|ENOTFOUND|ETIMEDOUT/i.test(getErrorMessage(error));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function getStringProperty(value: unknown, property: string): string | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const result = value[property];
-
-  return typeof result === "string" ? result : undefined;
 }
 
 function cloneTrack(track: TrackMeta): TrackMeta {
@@ -143,27 +118,7 @@ function cleanTrack(track: TrackMeta): TrackMeta | undefined {
   };
 }
 
-/**
- * Filters obvious non-track entries without discarding every alternate version.
- *
- * Remix, edit, slowed and sped-up versions are intentionally not blocked here.
- * They may be legitimate search results.
- */
-function isNoiseTrack(track: TrackMeta): boolean {
-  const title = normalizeTitle(track.title);
-
-  if (title.includes("рингтон")) {
-    return true;
-  }
-
-  return NOISE_TITLE_PATTERNS.some((pattern) => pattern.test(title));
-}
-
 function isAcceptableTrack(track: TrackMeta): boolean {
-  if (isNoiseTrack(track)) {
-    return false;
-  }
-
   if (track.duration > 0 && track.duration < MIN_TRACK_DURATION_SECONDS) {
     return false;
   }
@@ -217,7 +172,7 @@ function dedupeTracks(tracks: TrackMeta[]): TrackMeta[] {
   const byCanonicalName = new Map<string, TrackMeta>();
 
   for (const track of byId.values()) {
-    const key = JSON.stringify([normalizeTitle(track.artist), normalizeTitle(track.title)]);
+    const key = JSON.stringify([normalizeQuery(track.artist), normalizeQuery(track.title)]);
 
     const existing = byCanonicalName.get(key);
 
@@ -252,6 +207,11 @@ export class HITApi {
    * CacheManager internals.
    */
   private readonly searchTrackCache = new CacheManager<TrackMeta>(
+    SEARCH_TRACK_CACHE_SIZE,
+    SEARCH_TRACK_CACHE_TTL,
+  );
+
+  private readonly sourceHosts = new CacheManager<string>(
     SEARCH_TRACK_CACHE_SIZE,
     SEARCH_TRACK_CACHE_TTL,
   );
@@ -303,10 +263,17 @@ export class HITApi {
       headers: this.buildHeaders(host, "text/html"),
     });
 
-    const response = await this.retry.withRetry(() => this.http.getText(request), {
-      attempts: 3,
-      retryOn: isRetryableError,
-    });
+    const response = await this.retry.withRetry(
+      async () => {
+        const result = await this.http.getTextResponse(request);
+        if (!result.ok) throw new Error(`Search request failed with HTTP ${result.status}`);
+        return result.data;
+      },
+      {
+        attempts: 3,
+        retryOn: isRetryableError,
+      },
+    );
 
     return this.retry.asText(response);
   }
@@ -353,7 +320,7 @@ export class HITApi {
       const valid = raw.map(cleanTrack).filter((track): track is TrackMeta => track !== undefined);
 
       const filtered = valid.filter(isAcceptableTrack);
-      const deduped = dedupeTracks(filtered);
+      const deduped = dedupeTracks(sortTracksByScore(trimmedQuery, filtered));
 
       const ranked = sortTracksByScore(normalizedQuery, deduped).slice(0, safeLimit);
 
@@ -362,7 +329,8 @@ export class HITApi {
       this.searchCache.set(cacheKey, cachedResults);
 
       for (const track of cachedResults) {
-        this.searchTrackCache.set(track.id, cloneTrack(track));
+        this.searchTrackCache.set(`${host}:${track.id}`, cloneTrack(track));
+        this.sourceHosts.set(track.id, host);
       }
 
       return cloneTracks(cachedResults);
@@ -384,9 +352,8 @@ export class HITApi {
     }
 
     const host = parsed.hostname.toLowerCase();
-    const provider = this.providerFor(host);
 
-    if (!provider.hosts.includes(host)) {
+    if (!isSupportedHost(host) || parsed.port) {
       throw new Error(`Unsupported Hitmo host: ${host}`);
     }
 
@@ -434,7 +401,7 @@ export class HITApi {
       throw new Error("Track ID is required");
     }
 
-    preferredHost = preferredHost?.trim().toLowerCase() || undefined;
+    preferredHost = preferredHost?.trim().toLowerCase() || this.sourceHosts.get(id);
 
     const cacheKey = preferredHost ? `${preferredHost}:${id}` : id;
 
@@ -450,7 +417,7 @@ export class HITApi {
       const actualHost = host.toLowerCase();
       const provider = this.providerFor(actualHost, html);
 
-      const searchHit = this.searchTrackCache.get(id);
+      const searchHit = this.searchTrackCache.get(`${actualHost}:${id}`);
 
       const titleSeed = isUsableText(cached?.title) ? cached.title : searchHit?.title;
 
@@ -559,7 +526,7 @@ export class HITApi {
       throw new Error("Track ID is required");
     }
 
-    preferredHost = preferredHost?.trim().toLowerCase() || undefined;
+    preferredHost = preferredHost?.trim().toLowerCase() || this.sourceHosts.get(id);
 
     const cacheKey = preferredHost ? `${preferredHost}:${id}` : id;
 
@@ -584,38 +551,8 @@ export class HITApi {
 
         const extractedAudioUrl = provider.extractAudioUrl(root, html, actualHost, id) ?? "";
 
-        let audioUrl = isValidAudioUrl(extractedAudioUrl) ? extractedAudioUrl : "";
-
-        if (!audioUrl) {
-          try {
-            const request = new Request({
-              scheme: "https",
-              host: actualHost,
-              port: 443,
-              path: `/api/track/${id}/play`,
-              headers: this.buildHeaders(actualHost, "application/json"),
-            });
-
-            const response = await this.retry.withRetry(() => this.http.getJson(request), {
-              attempts: 2,
-              retryOn: isRetryableError,
-            });
-
-            const rawUrl = getStringProperty(response, "url");
-
-            const candidateUrl = rawUrl?.replace(/\\/g, "").trim();
-
-            if (candidateUrl && isValidAudioUrl(candidateUrl)) {
-              audioUrl = candidateUrl;
-            }
-          } catch {
-            //
-          }
-        }
-
-        if (!audioUrl) {
-          throw new Error(`Failed to extract audio URL for track ${id}`);
-        }
+        const audioUrl = isValidAudioUrl(extractedAudioUrl) ? extractedAudioUrl : "";
+        if (!audioUrl) throw new AudioExtractionError(id, actualHost);
 
         const result: TrackAudio = {
           id,
@@ -640,7 +577,7 @@ export class HITApi {
 
         return cloneAudio(result);
       } catch (error) {
-        if (!(error instanceof TrackNotFoundError)) {
+        if (!(error instanceof TrackNotFoundError) && !(error instanceof AudioExtractionError)) {
           this.retry.invalidateHost();
         }
 

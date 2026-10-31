@@ -1,6 +1,7 @@
 import type { HtmlElement } from "../core/html.js";
 import type { SiteProvider } from "./base.js";
 import type { TrackMeta } from "../models/track.js";
+import { HITMOS_HOSTS, isDomainHost } from "../core/hosts.js";
 import { normalizeText } from "../core/normalize.js";
 import { extractImageUrl } from "./image.js";
 
@@ -80,9 +81,10 @@ function extractJsonArray(source: string, start: number): string | null {
 
 function parseRscTrackList(html: string): RscTrack[] | null {
   const payloads = extractRscPayload(html);
+  const results: RscTrack[] = [];
 
   for (const payload of payloads) {
-    const trackArrayRegex = /"(?:list|tracks)":\[/g;
+    const trackArrayRegex = /"(?:list|tracks)"\s*:\s*\[/g;
     let match: RegExpExecArray | null;
 
     while ((match = trackArrayRegex.exec(payload)) !== null) {
@@ -102,7 +104,7 @@ function parseRscTrackList(html: string): RscTrack[] | null {
               typeof track.title === "string",
           )
         ) {
-          return tracks;
+          results.push(...tracks);
         }
       } catch {
         continue;
@@ -110,17 +112,17 @@ function parseRscTrackList(html: string): RscTrack[] | null {
     }
   }
 
-  return null;
+  return results.length ? results : null;
 }
 
 export class HitmosProvider implements SiteProvider {
   readonly name = "hitmos";
 
-  readonly hosts = ["hitmos.fm", "rus.hitmos.fm", "www.hitmos.fm"];
+  readonly hosts = HITMOS_HOSTS;
 
   matches(host: string, html?: string): boolean {
     return (
-      host.includes("hitmos") ||
+      isDomainHost(host, "hitmos.fm") ||
       html?.includes("li.relative") === true ||
       html?.includes("__next_f.push") === true
     );
@@ -145,9 +147,7 @@ export class HitmosProvider implements SiteProvider {
       const imagesById = new Map<string, string>();
 
       for (const item of root.querySelectorAll("li.relative")) {
-        const href = item
-          .querySelector('a[href^="/song/"]')
-          ?.getAttribute("href");
+        const href = item.querySelector('a[href^="/song/"]')?.getAttribute("href");
 
         const id = href?.match(/^\/song\/([a-zA-Z0-9_-]+)$/)?.[1];
         if (!id) continue;
@@ -214,7 +214,16 @@ export class HitmosProvider implements SiteProvider {
     return results;
   }
 
-  parseTrackPage(root: HtmlElement, _host: string, _trackId: string): Partial<TrackMeta> {
+  parseTrackPage(root: HtmlElement, _host: string, trackId: string): Partial<TrackMeta> {
+    const track = parseRscTrackList(root.innerHTML)?.find(
+      (candidate) => String(candidate.id) === trackId,
+    );
+    if (track)
+      return {
+        title: normalizeText(track.title),
+        artist: normalizeText(track.artist),
+        duration: track.duration,
+      };
     const ogTitle =
       root.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim() || "";
     const parsed = ogTitle ? { title: ogTitle } : {};
@@ -223,8 +232,13 @@ export class HitmosProvider implements SiteProvider {
 
   extractAudioUrl(_root: HtmlElement, html: string, _host: string, trackId: string): string | null {
     const rscTracks = parseRscTrackList(html);
-    const track = rscTracks?.find((candidate) => String(candidate.id) === trackId);
-
-    return track?.play?.replace(/\\/g, "").trim() || null;
+    const urls = new Set(
+      (rscTracks ?? [])
+        .filter(
+          (candidate) => String(candidate.id) === trackId && typeof candidate.play === "string",
+        )
+        .map((candidate) => candidate.play!.trim()),
+    );
+    return urls.size === 1 ? [...urls][0]! : null;
   }
 }

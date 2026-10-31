@@ -4,6 +4,7 @@ import { parseHtml, type HtmlElement } from "./html.js";
 import { DEFAULT_HTTP_CONFIG } from "./config.js";
 import { TrackNotFoundError } from "./errors.js";
 import { HttpClient } from "./http.js";
+import { isSupportedPageUrl, getSearchHosts } from "./hosts.js";
 import { normalizeText, normalizeTrackId } from "./normalize.js";
 
 export interface HostCacheState {
@@ -223,7 +224,12 @@ export class Retry {
     try {
       const res = await fetch(`https://${candidateHost}/`, {
         redirect: "follow",
+        signal: AbortSignal.timeout(DEFAULT_HTTP_CONFIG.timeout),
       });
+
+      if (!res.ok) return null;
+      const resolvedUrl = new URL(res.url);
+      if (!isSupportedPageUrl(resolvedUrl)) return null;
 
       const html = await res.text();
       const root = parseHtml(html);
@@ -235,13 +241,16 @@ export class Retry {
 
       if (canonical) {
         try {
-          return new URL(canonical).host;
+          const canonicalUrl = new URL(canonical, resolvedUrl);
+          if (isSupportedPageUrl(canonicalUrl) && canonicalUrl.hostname === resolvedUrl.hostname) {
+            return canonicalUrl.hostname;
+          }
         } catch {
           // ignore
         }
       }
 
-      return new URL(res.url).host;
+      return resolvedUrl.hostname;
     } catch {
       return null;
     }
@@ -259,7 +268,7 @@ export class Retry {
     }
 
     this.hostPromise = (async (): Promise<string> => {
-      const candidates = ["rus.hitmos.fm", "hitmos.fm", "www.hitmos.fm"];
+      const candidates = getSearchHosts();
 
       for (const candidate of candidates) {
         const host = await this.probeHost(candidate);
@@ -273,12 +282,7 @@ export class Retry {
         }
       }
 
-      const fallbackHost = "rus.hitmos.fm";
-      this.hostCache = {
-        value: fallbackHost,
-        expiresAt: Date.now() + 10 * 60_000,
-      };
-      return fallbackHost;
+      throw new Error("No available Hitmo hosts found");
     })();
 
     try {

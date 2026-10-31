@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { parseHtml } from "../src/core/html.js";
 import { HitmosProvider } from "../src/providers/hitmos.provider.js";
 import { HitmozProvider } from "../src/providers/hitmoz.provider.js";
-import { Retry } from "../src/core/retry.js";
 
 async function readFixture(name: string): Promise<string> {
   return readFile(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)), "utf8");
@@ -14,8 +13,7 @@ async function testHitmosProvider(): Promise<void> {
   const html = await readFixture("hitmos.html");
   const provider = new HitmosProvider();
   const root = parseHtml(html);
-  const retry = new Retry()
-  const host = await retry.resolveHost();
+  const host = "rus.hitmos.fm";
 
   assert.deepEqual(provider.parseSearch(root, host), [
     {
@@ -29,7 +27,11 @@ async function testHitmosProvider(): Promise<void> {
       explicit: false,
     },
   ]);
-  assert.deepEqual(provider.parseTrackPage(root, "hitmos.fm", "42"), { title: "RSC Song" });
+  assert.deepEqual(provider.parseTrackPage(root, "hitmos.fm", "42"), {
+    title: "RSC Song",
+    artist: "RSC Artist",
+    duration: 210,
+  });
 
   const searchPayload = JSON.stringify({
     list: [
@@ -82,10 +84,9 @@ async function testHitmozProvider(): Promise<void> {
   const html = await readFixture("hitmoz.html");
   const provider = new HitmozProvider();
   const root = parseHtml(html);
-  const retry = new Retry()
-  const host = await retry.resolveHost();
+  const host = "rue.hitmoz.org";
 
-  assert(provider.hosts.includes("ru.hitmoz.org"));
+  assert(provider.hosts.includes(host));
   assert(provider.matches("ru.hitmoz.org"));
   assert.deepEqual(provider.parseSearch(root, host), [
     {
@@ -110,6 +111,80 @@ async function testHitmozProvider(): Promise<void> {
     "https://hitmoz.org/get/music/20230808/Moz_Artist_-_Moz_Song_moz-7.mp3",
   );
 }
+
+function testTrackBinding(): void {
+  const hitmos = new HitmosProvider();
+  const script = (tracks: unknown[]) =>
+    `<script>self.__next_f.push([1,${JSON.stringify(JSON.stringify({ tracks }))}])</script>`;
+  const entry = (id: number, play: string) => ({
+    id,
+    title: "Song",
+    artist: "Artist",
+    duration: 180,
+    play,
+  });
+  const unrelated = script([entry(1, "https://plc1.hitmos.fm/wrong.mp3")]);
+  const selected = script([entry(42, "https://plc1.hitmos.fm/right.mp3")]);
+  const html = unrelated + selected;
+  assert.equal(
+    hitmos.extractAudioUrl(parseHtml(html), html, "rus.hitmos.fm", "42"),
+    "https://plc1.hitmos.fm/right.mp3",
+  );
+  assert.equal(
+    hitmos.extractAudioUrl(parseHtml(unrelated), unrelated, "rus.hitmos.fm", "42"),
+    null,
+  );
+  const conflicting = selected + script([entry(42, "https://plc1.hitmos.fm/conflict.mp3")]);
+  assert.equal(
+    hitmos.extractAudioUrl(parseHtml(conflicting), conflicting, "rus.hitmos.fm", "42"),
+    null,
+  );
+
+  const hitmoz = new HitmozProvider();
+  const item = (id: string, metadata: unknown) =>
+    `<div data-musid="track-id-${id}" data-musmeta='${JSON.stringify(metadata)}'></div>`;
+  const mozHtml =
+    item("1", { title: "Wrong", artist: "Wrong", url: "/get/music/wrong.mp3" }) +
+    item("42", { title: "Right", artist: "Artist", url: "/get/music/right.mp3" });
+  assert.equal(
+    hitmoz.extractAudioUrl(parseHtml(mozHtml), mozHtml, "rue.hitmoz.org", "42"),
+    "https://rue.hitmoz.org/get/music/right.mp3",
+  );
+  assert.deepEqual(hitmoz.parseTrackPage(parseHtml(mozHtml), "rue.hitmoz.org", "missing"), {});
+  for (const badHtml of [
+    item("42", { url: 123 }),
+    item("42", null),
+    mozHtml + item("42", { url: "/get/music/conflict.mp3" }),
+  ]) {
+    assert.equal(hitmoz.extractAudioUrl(parseHtml(badHtml), badHtml, "rue.hitmoz.org", "42"), null);
+  }
+  for (const route of [
+    '<a href="/song/42">Song</a>',
+    '<a href="https://rue.hitmoz.org/song/42">Song</a>',
+  ]) {
+    assert.equal(
+      hitmoz.parseSearch(
+        parseHtml(
+          `<li class="tracks__item" data-id="42">${route}<span class="track__artist">Artist</span></li>`,
+        ),
+        "rue.hitmoz.org",
+      )[0]?.id,
+      "42",
+    );
+  }
+  for (const route of ["/song/42/extra", "https://evil.test/song/42", "", "/song/41"]) {
+    assert.equal(
+      hitmoz.parseSearch(
+        parseHtml(
+          `<li class="tracks__item" data-id="42"><a class="track__title" href="${route}">Song</a></li>`,
+        ),
+        "rue.hitmoz.org",
+      ).length,
+      0,
+    );
+  }
+}
+testTrackBinding();
 
 await testHitmosProvider();
 await testHitmozProvider();
