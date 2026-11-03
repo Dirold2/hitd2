@@ -4,6 +4,7 @@ import { DEFAULT_HTTP_CONFIG } from "./config.js";
 export interface HttpRequest {
   url: string;
   headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 export interface HttpTextResponse {
@@ -15,8 +16,12 @@ export interface HttpTextResponse {
 export class HttpClient {
   private readonly client: HyperClient;
 
-  constructor(client?: HyperClient) {
+  constructor(
+    client?: HyperClient,
+    private readonly fetchText?: typeof globalThis.fetch,
+  ) {
     this.client = client ?? new HyperClient(DEFAULT_HTTP_CONFIG);
+    if (!client && !fetchText) this.fetchText = (...args) => globalThis.fetch(...args);
   }
 
   async getText(req: HttpRequest): Promise<string> {
@@ -29,9 +34,22 @@ export class HttpClient {
   }
 
   async getTextResponse(req: HttpRequest): Promise<HttpTextResponse> {
+    req.signal?.throwIfAborted();
+    // Deadline-bound search requests bypass transport plugins/retries, keeping
+    // cancellation active through consumption of the response body.
+    if (req.signal && this.fetchText) {
+      const response = await this.fetchText(req.url, {
+        headers: req.headers,
+        signal: req.signal,
+        redirect: "error",
+      });
+      return { data: await response.text(), ok: response.ok, status: response.status };
+    }
     const response = await this.client.rest.get<unknown>(req.url, {
       headers: req.headers,
+      signal: req.signal,
     });
+    req.signal?.throwIfAborted();
 
     const rawBody = (response.raw as { body?: unknown } | undefined)?.body;
 

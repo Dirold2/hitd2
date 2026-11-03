@@ -9,20 +9,21 @@ import { sortTracksByScore } from "../core/scoring.js";
 import { HttpClient } from "../core/http.js";
 import { ProviderRegistry } from "../providers/registry.js";
 import { HitmosProvider } from "../providers/hitmos.provider.js";
+import { HitmonetProvider } from "../providers/hitmonet.provider.js";
 import { HitmozProvider } from "../providers/hitmoz.provider.js";
 import type { SiteProvider } from "../providers/base.js";
 import { isValidAudioUrl } from "../core/filters.js";
-import { isSupportedHost } from "../core/hosts.js";
-import { TrackNotFoundError, AudioExtractionError } from "../core/errors.js";
+import { isSupportedHost, providerForHost, getSearchHosts, trackPagePath } from "../core/hosts.js";
+import { TrackNotFoundError, AudioExtractionError, AlbumError } from "../core/errors.js";
+import type { Album } from "../models/album.js";
 
+import { probeAudio } from "../core/audio-probe.js";
+import type { SearchOptions, SearchSource, SearchTrack } from "../models/search.js";
 import type { TrackMeta } from "../models/track.js";
 import type { TrackAudio } from "../models/audio.js";
 
 const DEFAULT_SEARCH_LIMIT = 20;
 const MAX_SEARCH_LIMIT = 100;
-
-const SEARCH_CACHE_SIZE = 200;
-const SEARCH_CACHE_TTL = 10 * 60_000;
 
 const TRACK_CACHE_SIZE = 1000;
 const TRACK_CACHE_TTL = 15 * 60_000;
@@ -36,12 +37,7 @@ const AUDIO_CACHE_TTL = 50 * 60_000;
 const AUDIO_URL_TTL = 60 * 60_000;
 
 const MIN_TRACK_DURATION_SECONDS = 45;
-const MAX_TRACK_DURATION_SECONDS = 60 * 60;
-
 const TRACK_ID_PATTERN = /^\/(?:song|track)\/([a-zA-Z0-9_-]+)\/?$/;
-
-const VERSION_TITLE_PATTERN =
-  /\b(?:remix|live|radio edit|extended|instrumental|karaoke|nightcore|slowed|sped[\s-]*up|acoustic)\b/i;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
@@ -60,11 +56,7 @@ function isRetryableError(error: unknown): boolean {
 }
 
 function cloneTrack(track: TrackMeta): TrackMeta {
-  return { ...track };
-}
-
-function cloneTracks(tracks: TrackMeta[]): TrackMeta[] {
-  return tracks.map(cloneTrack);
+  return structuredClone(track);
 }
 
 function cloneAudio(audio: TrackAudio): TrackAudio {
@@ -126,62 +118,21 @@ function isAcceptableTrack(track: TrackMeta): boolean {
   return true;
 }
 
-/**
- * Scores a track when duplicate entries represent the same recording.
- *
- * This is a metadata completeness heuristic, not a guarantee that one
- * recording is the original version.
- */
-function trackQuality(track: TrackMeta): number {
-  let score = 0;
-
-  if (track.image?.trim()) {
-    score += 2;
+function searchNumber(value: number | undefined, fallback: number, name: string): number {
+  const result = value ?? fallback;
+  if (!Number.isInteger(result) || result < 0 || result > 2_147_483_647) {
+    throw new RangeError(`${name} must be a non-negative integer <= 2147483647`);
   }
-
-  if (
-    Number.isFinite(track.duration) &&
-    track.duration >= MIN_TRACK_DURATION_SECONDS &&
-    track.duration <= MAX_TRACK_DURATION_SECONDS
-  ) {
-    score += 3;
-  }
-
-  if (VERSION_TITLE_PATTERN.test(track.title)) {
-    score -= 2;
-  }
-
-  return score;
+  return result;
 }
 
-/**
- * Removes duplicate IDs first, then duplicate normalized artist/title pairs.
- */
-function dedupeTracks(tracks: TrackMeta[]): TrackMeta[] {
-  const byId = new Map<string, TrackMeta>();
-
-  for (const track of tracks) {
-    const id = track.id.trim();
-    const existing = byId.get(id);
-
-    if (!existing || trackQuality(track) > trackQuality(existing)) {
-      byId.set(id, track);
-    }
-  }
-
-  const byCanonicalName = new Map<string, TrackMeta>();
-
-  for (const track of byId.values()) {
-    const key = JSON.stringify([normalizeQuery(track.artist), normalizeQuery(track.title)]);
-
-    const existing = byCanonicalName.get(key);
-
-    if (!existing || trackQuality(track) > trackQuality(existing)) {
-      byCanonicalName.set(key, track);
-    }
-  }
-
-  return [...byCanonicalName.values()];
+// Preserve punctuation and version qualifiers: search normalization must not
+// turn a live/remix recording into its studio counterpart.
+function recordingKey(track: TrackMeta): string {
+  return JSON.stringify([
+    normalizeQuery(track.artist).normalize("NFC"),
+    normalizeQuery(track.title).normalize("NFC"),
+  ]);
 }
 
 export class HITApi {
@@ -190,17 +141,13 @@ export class HITApi {
   private readonly providers: ProviderRegistry;
 
   private sessionCookie?: string;
+  private readonly fetchAudio?: typeof globalThis.fetch;
 
   /**
    * Stores detailed track metadata.
    * Search results are kept separately.
    */
   private readonly trackCache = new CacheManager<TrackMeta>(TRACK_CACHE_SIZE, TRACK_CACHE_TTL);
-
-  /**
-   * Stores complete search results by host, normalized query and limit.
-   */
-  private readonly searchCache = new CacheManager<TrackMeta[]>(SEARCH_CACHE_SIZE, SEARCH_CACHE_TTL);
 
   /**
    * Allows getTrack() to use metadata found during search without inspecting
@@ -211,15 +158,23 @@ export class HITApi {
     SEARCH_TRACK_CACHE_TTL,
   );
 
-  private readonly sourceHosts = new CacheManager<string>(
+  private readonly sourceHosts = new CacheManager<string | null>(
     SEARCH_TRACK_CACHE_SIZE,
     SEARCH_TRACK_CACHE_TTL,
   );
 
   private readonly audioCache = new CacheManager<TrackAudio>(AUDIO_CACHE_SIZE, AUDIO_CACHE_TTL);
 
-  constructor(options?: { httpClient?: HyperClient; sessionCookie?: string }) {
-    this.http = new HttpClient(options?.httpClient);
+  constructor(options?: {
+    httpClient?: HyperClient;
+    sessionCookie?: string;
+    fetch?: typeof globalThis.fetch;
+  }) {
+    this.http = new HttpClient(
+      options?.httpClient,
+      options?.httpClient ? undefined : options?.fetch,
+    );
+    this.fetchAudio = options?.fetch;
 
     this.retry = new Retry({
       httpClient: options?.httpClient,
@@ -228,7 +183,11 @@ export class HITApi {
 
     this.sessionCookie = options?.sessionCookie;
 
-    this.providers = new ProviderRegistry([new HitmosProvider(), new HitmozProvider()]);
+    this.providers = new ProviderRegistry([
+      new HitmosProvider(),
+      new HitmozProvider(),
+      new HitmonetProvider(),
+    ]);
   }
 
   setSessionCookie(cookie: string): void {
@@ -253,88 +212,223 @@ export class HITApi {
     return this.providers.resolve(host, html);
   }
 
-  private async fetchSearchHtml(host: string, query: string): Promise<string> {
+  private async fetchSearchHtml(host: string, query: string, timeoutMs: number): Promise<string> {
     const request = new Request({
       scheme: "https",
       host,
       port: 443,
-      path: "/search",
-      query: { q: query },
+      path:
+        providerForHost(host) === "hitmonet"
+          ? `/search/${encodeURIComponent(normalizeQuery(query))}`
+          : "/search",
+      query: providerForHost(host) === "hitmonet" ? { type: "tracks" } : { q: query },
       headers: this.buildHeaders(host, "text/html"),
     });
-
-    const response = await this.retry.withRetry(
-      async () => {
-        const result = await this.http.getTextResponse(request);
-        if (!result.ok) throw new Error(`Search request failed with HTTP ${result.status}`);
-        return result.data;
-      },
-      {
-        attempts: 3,
-        retryOn: isRetryableError,
-      },
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(new DOMException("Search deadline exceeded", "TimeoutError")),
+      timeoutMs,
     );
-
-    return this.retry.asText(response);
+    try {
+      const response = await this.http.getTextResponse({
+        url: request.url,
+        headers: request.headers,
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Search ${host} failed with HTTP ${response.status}`);
+      return response.data;
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
   }
 
-  async search(query: string, limit = DEFAULT_SEARCH_LIMIT): Promise<TrackMeta[]> {
-    const trimmedQuery = query.trim();
-    const normalizedQuery = normalizeQuery(trimmedQuery);
-
-    if (!trimmedQuery || !normalizedQuery) {
-      return [];
-    }
-
-    const requestedLimit = Number.isFinite(limit) ? Math.trunc(limit) : DEFAULT_SEARCH_LIMIT;
-
-    const safeLimit = Math.min(MAX_SEARCH_LIMIT, Math.max(0, requestedLimit));
-
-    if (safeLimit === 0) {
-      return [];
-    }
-
-    const host = await this.retry.resolveHost();
-
-    const cacheKey = JSON.stringify([host, normalizedQuery, safeLimit]);
-
-    const cached = this.searchCache.get(cacheKey);
-
-    if (cached) {
-      return cloneTracks(cached);
-    }
-
-    return this.retry.dedupe(`search:${cacheKey}`, async () => {
-      const cachedAgain = this.searchCache.get(cacheKey);
-
-      if (cachedAgain) {
-        return cloneTracks(cachedAgain);
+  private async verifySource(source: SearchSource, timeoutMs: number): Promise<void> {
+    const started = performance.now();
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new DOMException("Verification deadline exceeded", "TimeoutError"));
+    }, timeoutMs);
+    const finish = (status: SearchSource["availability"]["status"], reason?: string) => {
+      source.availability = {
+        status,
+        checkedAt: Date.now(),
+        latencyMs: performance.now() - started,
+        ...(reason ? { reason } : {}),
+      };
+    };
+    try {
+      const response = await this.http.getTextResponse({
+        url: source.url,
+        headers: this.buildHeaders(source.host, "text/html"),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        finish(
+          response.status === 404 || response.status === 410 ? "unavailable" : "error",
+          `Track page HTTP ${response.status}`,
+        );
+        return;
       }
-
-      const html = await this.fetchSearchHtml(host, trimmedQuery);
-      const root = parseHtml(html);
-      const provider = this.providerFor(host, html);
-
-      const raw = provider.parseSearch(root, host);
-
-      const valid = raw.map(cleanTrack).filter((track): track is TrackMeta => track !== undefined);
-
-      const filtered = valid.filter(isAcceptableTrack);
-      const deduped = dedupeTracks(sortTracksByScore(trimmedQuery, filtered));
-
-      const ranked = sortTracksByScore(normalizedQuery, deduped).slice(0, safeLimit);
-
-      const cachedResults = cloneTracks(ranked);
-
-      this.searchCache.set(cacheKey, cachedResults);
-
-      for (const track of cachedResults) {
-        this.searchTrackCache.set(`${host}:${track.id}`, cloneTrack(track));
-        this.sourceHosts.set(track.id, host);
+      const provider = this.providerFor(source.host);
+      const audioUrl = provider.extractAudioUrl(
+        parseHtml(response.data),
+        response.data,
+        source.host,
+        source.id,
+      );
+      if (!audioUrl || !isValidAudioUrl(audioUrl)) {
+        finish("unavailable", "Selected track has no trusted audio URL");
+        return;
       }
+      const result = await probeAudio(audioUrl, {
+        signal: controller.signal,
+        timeoutMs: Math.max(0, timeoutMs - (performance.now() - started)),
+        fetch: this.fetchAudio,
+      });
+      finish(
+        timedOut ? "timeout" : result.status,
+        timedOut ? "Verification deadline exceeded" : result.reason,
+      );
+      if (source.availability.status === "available") source.audioUrl = audioUrl;
+    } catch (error) {
+      finish(
+        timedOut ? "timeout" : "error",
+        timedOut ? "Verification deadline exceeded" : getErrorMessage(error),
+      );
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
+    }
+  }
 
-      return cloneTracks(cachedResults);
-    });
+  async search(
+    query: string,
+    limit = DEFAULT_SEARCH_LIMIT,
+    options: SearchOptions = {},
+  ): Promise<SearchTrack[]> {
+    const normalizedQuery = normalizeQuery(query);
+    if (!normalizedQuery) return [];
+    const safeLimit = Math.min(
+      MAX_SEARCH_LIMIT,
+      Math.max(0, Number.isFinite(limit) ? Math.trunc(limit) : DEFAULT_SEARCH_LIMIT),
+    );
+    if (!safeLimit) return [];
+    const maxProbes = searchNumber(options.maxProbes, 6, "maxProbes");
+    const probeTimeoutMs = searchNumber(options.probeTimeoutMs, 3000, "probeTimeoutMs");
+    const searchTimeoutMs = searchNumber(options.searchTimeoutMs, 5000, "searchTimeoutMs");
+    const groups = new Map<string, string[]>();
+    for (const host of getSearchHosts()) {
+      const key = providerForHost(host)!;
+      groups.set(key, [...(groups.get(key) ?? []), host]);
+    }
+    const searchDeadline = performance.now() + searchTimeoutMs;
+    const responses = await Promise.allSettled(
+      [...groups.values()].map(async (hosts) => {
+        const errors: unknown[] = [];
+        for (const host of hosts) {
+          const remainingMs = searchDeadline - performance.now();
+          if (remainingMs <= 0) {
+            errors.push(new DOMException("Provider search deadline exceeded", "TimeoutError"));
+            break;
+          }
+          try {
+            const html = await this.fetchSearchHtml(host, query.trim(), Math.ceil(remainingMs));
+            const tracks = this.providerFor(host)
+              .parseSearch(parseHtml(html), host)
+              .map(cleanTrack)
+              .filter((track): track is TrackMeta => !!track && isAcceptableTrack(track));
+            return tracks.map((track): SearchTrack => ({
+              ...track,
+              host,
+              url: `https://${host}${trackPagePath(host, track.id)}`,
+              sources: [
+                {
+                  host,
+                  provider: providerForHost(host)!,
+                  id: track.id,
+                  url: `https://${host}${trackPagePath(host, track.id)}`,
+                  availability: { status: "unchecked" },
+                },
+              ],
+            }));
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        throw new AggregateError(errors, `Search mirrors failed: ${hosts.join(", ")}`);
+      }),
+    );
+    const successes = responses.filter((response) => response.status === "fulfilled");
+    if (!successes.length) {
+      throw new AggregateError(
+        responses.map((response) => (response.status === "rejected" ? response.reason : undefined)),
+        "All search providers failed",
+      );
+    }
+    const candidates = successes.flatMap((response) => response.value);
+    // Record every observed source before grouping/limiting, including collisions
+    // between different recordings that happen to share a native ID.
+    for (const track of candidates) {
+      this.searchTrackCache.set(`${track.host}:${track.id}`, cloneTrack(track));
+      const previous = this.sourceHosts.get(track.id);
+      this.sourceHosts.set(
+        track.id,
+        previous === null || (previous !== undefined && previous !== track.host)
+          ? null
+          : track.host,
+      );
+    }
+    const ranked = sortTracksByScore(normalizedQuery, candidates) as SearchTrack[];
+    const grouped: SearchTrack[] = [];
+    for (const track of ranked) {
+      const existing = grouped.find(
+        (entry) =>
+          recordingKey(entry) === recordingKey(track) &&
+          entry.duration > 0 &&
+          track.duration > 0 &&
+          Math.abs(entry.duration - track.duration) <= 2,
+      );
+      if (existing) {
+        const source = track.sources[0]!;
+        if (!existing.sources.some((entry) => entry.url === source.url))
+          existing.sources.push(source);
+      } else grouped.push(track);
+    }
+    const results = grouped.slice(0, safeLimit);
+    if (options.verifyAudio !== false) {
+      const sources = results.flatMap((track) => track.sources).slice(0, maxProbes);
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(3, sources.length) }, async () => {
+          while (next < sources.length) await this.verifySource(sources[next++]!, probeTimeoutMs);
+        }),
+      );
+    }
+    const preference = (source: SearchSource) =>
+      source.availability.status === "available"
+        ? 0
+        : source.availability.status === "unchecked"
+          ? 1
+          : 2;
+    for (const track of results) {
+      const primary = [...track.sources].sort((a, b) => preference(a) - preference(b))[0]!;
+      Object.assign(track, {
+        id: primary.id,
+        host: primary.host,
+        url: primary.url,
+        uri: `${primary.provider}:track:${primary.id}`,
+      });
+    }
+    return structuredClone(results);
+  }
+
+  private sourceHost(id: string): string | undefined {
+    const host = this.sourceHosts.get(id);
+    if (host === null) throw new Error(`Ambiguous track ID ${id}; use a track URL instead`);
+    return host;
   }
 
   private parseTrackUrl(url: string): {
@@ -369,6 +463,65 @@ export class HITApi {
     };
   }
 
+  async getAlbumByUrl(url: string): Promise<Album> {
+    // Check the raw authority/path too: URL normalizes explicit :443 and dot segments away.
+    const raw = /^https:\/\/([^/?#]+)(\/album\/[1-9]\d*)$/i.exec(url);
+    const parsed = new URL(url);
+    if (
+      !raw ||
+      raw[1]!.toLowerCase() !== parsed.hostname ||
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.port ||
+      providerForHost(parsed.hostname) !== "hitmonet"
+    )
+      throw new Error(`Unsupported Hitmo album URL: ${url}`);
+    const host = parsed.hostname;
+    const id = parsed.pathname.slice("/album/".length);
+    const request = new Request({
+      scheme: "https",
+      host,
+      port: 443,
+      path: `/album/${id}`,
+      headers: this.buildHeaders(host, "text/html"),
+    });
+    const html = await this.retry.withRetry(
+      async () => {
+        const response = await this.http.getTextResponse(request);
+        if (!response.ok) {
+          throw new AlbumError(
+            response.status === 404 || response.status === 410
+              ? "ALBUM_NOT_FOUND"
+              : "ALBUM_HTTP_ERROR",
+            id,
+            host,
+            `request failed with HTTP ${response.status}`,
+            response.status,
+          );
+        }
+        return response.data;
+      },
+      {
+        attempts: 3,
+        retryOn: (error) =>
+          error instanceof AlbumError
+            ? error.status === 429 ||
+              (error.status !== undefined && error.status >= 500 && error.status < 600)
+            : isRetryableError(error),
+      },
+    );
+    const album = new HitmonetProvider().parseAlbum(parseHtml(html), host, id);
+    if (!album)
+      throw new AlbumError(
+        "ALBUM_INVALID_DATA",
+        id,
+        host,
+        "missing, malformed or conflicting album data",
+      );
+    return album;
+  }
+
   async getTrackByUrl(url: string): Promise<TrackMeta> {
     const { host, id } = this.parseTrackUrl(url);
 
@@ -401,7 +554,7 @@ export class HITApi {
       throw new Error("Track ID is required");
     }
 
-    preferredHost = preferredHost?.trim().toLowerCase() || this.sourceHosts.get(id);
+    preferredHost = preferredHost?.trim().toLowerCase() || this.sourceHost(id);
 
     const cacheKey = preferredHost ? `${preferredHost}:${id}` : id;
 
@@ -526,7 +679,7 @@ export class HITApi {
       throw new Error("Track ID is required");
     }
 
-    preferredHost = preferredHost?.trim().toLowerCase() || this.sourceHosts.get(id);
+    preferredHost = preferredHost?.trim().toLowerCase() || this.sourceHost(id);
 
     const cacheKey = preferredHost ? `${preferredHost}:${id}` : id;
 

@@ -7,7 +7,11 @@ export function normalizeQuery(value: string): string {
 }
 
 export function normalizeTrackId(input: string): string {
-  return input.replace("hitmos:track:", "").replace("hitmoz:track:", "").trim();
+  return input
+    .replace("hitmos:track:", "")
+    .replace("hitmoz:track:", "")
+    .replace("hitmonet:track:", "")
+    .trim();
 }
 
 export function normalizeTitle(input: string): string {

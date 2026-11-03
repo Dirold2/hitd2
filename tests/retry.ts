@@ -154,7 +154,7 @@ async function testSearchPreservesSourceHost(): Promise<void> {
   const api = new HITApi({ httpClient: client as never });
   const retry = (api as unknown as { retry: Retry }).retry;
   retry.resolveHost = async () => "rue.hitmoz.org";
-  const tracks = await api.search("Artist - Song");
+  const tracks = await api.search("Artist - Song", 20, { verifyAudio: false });
   assert.equal(tracks[0]?.id, "42");
   retry.resolveHost = async () => "rus.hitmos.fm";
   const audio = await api.getAudio("42");
@@ -223,8 +223,11 @@ async function testSearchHttpErrorsAreNotCached(): Promise<void> {
   const api = new HITApi({ httpClient: client as never });
   const retry = (api as unknown as { retry: Retry }).retry;
   retry.resolveHost = async () => "rue.hitmoz.org";
-  await assert.rejects(() => api.search("Artist - Song"), /HTTP 404/);
-  assert.equal((await api.search("Artist - Song"))[0]?.id, "42");
+  await assert.rejects(
+    () => api.search("Artist - Song", 20, { verifyAudio: false }),
+    AggregateError,
+  );
+  assert.equal((await api.search("Artist - Song", 20, { verifyAudio: false }))[0]?.id, "42");
   assert.equal(client.calls, 2);
 }
 
@@ -253,9 +256,9 @@ async function testUnverifiedAudioIsRejected(): Promise<void> {
   );
 }
 await testUnverifiedAudioIsRejected();
-await testSearchHttpErrorsAreNotCached();
+await withSearchHost(testSearchHttpErrorsAreNotCached);
 await testCurrentHitmozDomain();
-await testSearchPreservesSourceHost();
+await withSearchHost(testSearchPreservesSourceHost);
 await testHostResolution();
 await testHostProbeRejectsErrorsAndForeignHosts();
 await test404IsNotCachedAndUsesNegativeCache();
@@ -266,3 +269,14 @@ await testTemporaryNetworkErrorIsRetried();
 await testValidTrackPageStillExtractsAudio();
 
 console.log("Track page HTTP handling tests passed");
+
+async function withSearchHost(test: () => Promise<void>): Promise<void> {
+  const previous = process.env.HITD2_HOSTS;
+  process.env.HITD2_HOSTS = '["rue.hitmoz.org"]';
+  try {
+    await test();
+  } finally {
+    if (previous === undefined) delete process.env.HITD2_HOSTS;
+    else process.env.HITD2_HOSTS = previous;
+  }
+}

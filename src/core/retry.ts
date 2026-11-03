@@ -4,7 +4,7 @@ import { parseHtml, type HtmlElement } from "./html.js";
 import { DEFAULT_HTTP_CONFIG } from "./config.js";
 import { TrackNotFoundError } from "./errors.js";
 import { HttpClient } from "./http.js";
-import { isSupportedPageUrl, getSearchHosts } from "./hosts.js";
+import { isSupportedPageUrl, getSearchHosts, trackPagePath } from "./hosts.js";
 import { normalizeText, normalizeTrackId } from "./normalize.js";
 
 export interface HostCacheState {
@@ -313,7 +313,7 @@ export class Retry {
       scheme: "https",
       host,
       port: 443,
-      path: `/song/${id}`,
+      path: trackPagePath(host, id),
       headers: {
         "User-Agent": DEFAULT_HTTP_CONFIG.userAgent,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",

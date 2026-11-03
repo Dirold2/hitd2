@@ -7,7 +7,9 @@ export const HITMOZ_HOSTS = [
   "www.hitmoz.org",
 ];
 
-export const SEARCH_HOSTS = [...HITMOS_HOSTS, ...HITMOZ_HOSTS];
+export const HITMONET_HOSTS = ["music.hitmo.net"];
+
+export const SEARCH_HOSTS = [...HITMOS_HOSTS, ...HITMOZ_HOSTS, ...HITMONET_HOSTS];
 
 export function isDomainHost(host: string, domain: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
@@ -62,7 +64,7 @@ export function isSupportedPageUrl(url: URL): boolean {
   );
 }
 
-export type HostProvider = "hitmos" | "hitmoz";
+export type HostProvider = "hitmos" | "hitmoz" | "hitmonet";
 
 function parseHostArray(value: unknown, name: string): string[] {
   if (!Array.isArray(value) || value.length === 0) {
@@ -100,19 +102,20 @@ export function getConfiguredMirrors(): Partial<Record<HostProvider, string[]>> 
   if (value === undefined) return {};
   const parsed = parseEnvironmentJson(value, "HITD2_MIRRORS");
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("HITD2_MIRRORS must be an object with hitmos and/or hitmoz arrays");
+    throw new Error("HITD2_MIRRORS must be an object with hitmos, hitmoz and/or hitmonet arrays");
   }
   const result: Partial<Record<HostProvider, string[]>> = {};
   const entries = Object.entries(parsed);
   if (!entries.length) throw new Error("HITD2_MIRRORS must not be empty");
   for (const [provider, hosts] of entries) {
-    if (provider !== "hitmos" && provider !== "hitmoz") {
+    if (provider !== "hitmos" && provider !== "hitmoz" && provider !== "hitmonet") {
       throw new Error(`Unknown provider in HITD2_MIRRORS: ${provider}`);
     }
     result[provider] = parseHostArray(hosts, "HITD2_MIRRORS");
   }
-  if (result.hitmos?.some((host) => result.hitmoz?.includes(host))) {
-    throw new Error("HITD2_MIRRORS cannot assign a host to both providers");
+  const allHosts = Object.values(result).flat();
+  if (new Set(allHosts).size !== allHosts.length) {
+    throw new Error("HITD2_MIRRORS cannot assign a host to multiple providers");
   }
   for (const [provider, hosts] of Object.entries(result)) {
     for (const host of hosts) {
@@ -125,6 +128,7 @@ export function getConfiguredMirrors(): Partial<Record<HostProvider, string[]>> 
 }
 
 function builtinProvider(host: string): HostProvider | undefined {
+  if (HITMONET_HOSTS.includes(host)) return "hitmonet";
   if (isDomainHost(host, "hitmos.fm")) return "hitmos";
   if (isDomainHost(host, "hitmoz.org")) return "hitmoz";
   return undefined;
@@ -132,13 +136,18 @@ function builtinProvider(host: string): HostProvider | undefined {
 
 export function providerForHost(host: string): HostProvider | undefined {
   const mirrors = getConfiguredMirrors();
+  if (mirrors.hitmonet?.includes(host)) return "hitmonet";
   if (mirrors.hitmos?.includes(host)) return "hitmos";
   if (mirrors.hitmoz?.includes(host)) return "hitmoz";
   return builtinProvider(host);
 }
 
 export function isTrustedAudioHost(host: string): boolean {
-  if (["hitmos.fm", "hitmos.me", "hitmoz.org"].some((domain) => isDomainHost(host, domain)))
+  if (
+    ["hitmos.fm", "hitmos.me", "hitmoz.org", "hitmo.net"].some((domain) =>
+      isDomainHost(host, domain),
+    )
+  )
     return true;
   if (Object.values(getConfiguredMirrors()).some((hosts) => hosts.includes(host))) return true;
   const value = process.env.HITD2_AUDIO_HOSTS;
@@ -148,4 +157,8 @@ export function isTrustedAudioHost(host: string): boolean {
       host,
     )
   );
+}
+
+export function trackPagePath(host: string, id: string): string {
+  return `/${providerForHost(host) === "hitmonet" ? "track" : "song"}/${id}`;
 }

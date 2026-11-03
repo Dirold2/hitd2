@@ -1,0 +1,632 @@
+{
+  "tracks": [
+    {
+      "id": 7744353,
+      "artist": "Face",
+      "title": "Бог рэпа (Бог рэпа 2024)",
+      "version": "",
+      "duration": 136,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4NC90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4NC9GYWNlIC0g0JHQvtCzINGA0Y3Qv9CwIChoaXRtby5uZXQpLm1wMw==.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706646,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744354,
+      "artist": "Face",
+      "title": "Тяжёлый металл / ты не гангстер (Бог рэпа 2024)",
+      "version": "",
+      "duration": 202,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4My90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4My9GYWNlIC0g0KLRj9C20ZHQu9GL0Lkg0LzQtdGC0LDQu9C7IC8g0YLRiyDQvdC1INCz0LDQvdCz0YHRgtC10YAgKGhpdG1vLm5ldCkubXAz.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706645,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744355,
+      "artist": "Face",
+      "title": "Продолжаем (Бог рэпа 2024)",
+      "version": "",
+      "duration": 147,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4NS90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4NS9GYWNlIC0g0J/RgNC+0LTQvtC70LbQsNC10LwgKGhpdG1vLm5ldCkubXAz.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706647,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744356,
+      "artist": "Face",
+      "title": "Люби (Бог рэпа 2024)",
+      "version": "",
+      "duration": 179,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4Ni90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4Ni9GYWNlIC0g0JvRjtCx0LggKGhpdG1vLm5ldCkubXAz.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706648,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744357,
+      "artist": "Face",
+      "title": "Ддт (Бог рэпа 2024)",
+      "version": "",
+      "duration": 124,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4Ny90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4Ny9GYWNlIC0g0JTQtNGCIChoaXRtby5uZXQpLm1wMw==.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706649,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744358,
+      "artist": "Face",
+      "title": "Виктор Баринов (Бог рэпа 2024)",
+      "version": "",
+      "duration": 131,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4OC90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4OC9GYWNlIC0g0JLQuNC60YLQvtGAINCR0LDRgNC40L3QvtCyIChoaXRtby5uZXQpLm1wMw==.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706650,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744359,
+      "artist": "Face",
+      "title": "Если моя (Бог рэпа 2024)",
+      "version": "",
+      "duration": 164,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg4OS90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg4OS9GYWNlIC0g0JXRgdC70Lgg0LzQvtGPIChoaXRtby5uZXQpLm1wMw==.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706651,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744360,
+      "artist": "Face",
+      "title": "Оса (Бог рэпа 2024)",
+      "version": "",
+      "duration": 150,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg5MC90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg5MC9GYWNlIC0g0J7RgdCwIChoaXRtby5uZXQpLm1wMw==.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706652,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744361,
+      "artist": "Face",
+      "title": "Да, это я (Бог рэпа 2024)",
+      "version": "",
+      "duration": 95,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg5MS90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg5MS9GYWNlIC0g0JTQsCwg0Y3RgtC+INGPIChoaXRtby5uZXQpLm1wMw==.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706653,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744362,
+      "artist": "Face",
+      "title": "Конец планеты (Бог рэпа 2024)",
+      "version": "",
+      "duration": 161,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg5Mi90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg5Mi9GYWNlIC0g0JrQvtC90LXRhiDQv9C70LDQvdC10YLRiyAoaGl0bW8ubmV0KS5tcDM=.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706654,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    },
+    {
+      "id": 7744363,
+      "artist": "Face",
+      "title": "Песня дурака (Бог рэпа 2024)",
+      "version": "",
+      "duration": 79,
+      "bitrate": null,
+      "size": null,
+      "play": "https://p1.hitmo.net/L3QvNzExMDg5My90cmFjay5tcDM=.mp3",
+      "download": "https://d1.hitmo.net/L3QvNzExMDg5My9GYWNlIC0g0J/QtdGB0L3RjyDQtNGD0YDQsNC60LAgKGhpdG1vLm5ldCkubXAz.mp3",
+      "artistSlug": "face",
+      "availableArtistSlugs": [],
+      "iCode": "not_exist",
+      "related": [],
+      "similar": [],
+      "radio": [],
+      "artists": [],
+      "text": "",
+      "seoVars": null,
+      "foreign": false,
+      "artistCollection": {
+        "title": "Face",
+        "slug": "face",
+        "entityId": 4330829,
+        "imageInfo": {
+          "color": "#3d9dc4",
+          "imageUrl": "https://s1.hitmo.net/collection/000/009/595/446805_large.jpg"
+        }
+      },
+      "fileId": 9706655,
+      "imageInfo": {
+        "color": "#672c27",
+        "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+      },
+      "trackProvider": [],
+      "hasText": false,
+      "albumsList": [
+        {
+          "id": 4335299,
+          "artist": "Face",
+          "title": "Бог рэпа",
+          "slug": "face-bog-repa",
+          "release": {
+            "artist": "Face",
+            "title": "Бог рэпа",
+            "type": "album",
+            "date": "2024-06-07"
+          },
+          "imageInfo": {
+            "color": "#672c27",
+            "imageUrl": "https://s1.hitmo.net/album/000/014/065/374016_large.jpg"
+          }
+        }
+      ],
+      "listGenres": []
+    }
+  ],
+  "source": {
+    "entity": "album",
+    "type": "albums",
+    "id": 4335299,
+    "pagination": {
+      "page": 1,
+      "lastPage": 1,
+      "itemsPerPage": 100,
+      "totalItems": 11,
+      "itemsPerCurrentPage": 11
+    }
+  }
+}

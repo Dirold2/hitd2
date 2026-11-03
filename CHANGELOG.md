@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.0.0] - 2026-11-03
+
+### Migration
+
+- `search()` now queries configured providers concurrently and verifies a bounded set of audio sources by default; it returns `SearchTrack[]` with `url`, `host`, and `sources`.
+- Pass `track.url` to `getAudio()`/`getTrack()` and persist full URLs instead of bare numeric IDs; ambiguous IDs now throw rather than selecting an unrelated source.
+- Search may issue additional page/CDN requests and wait for bounded provider/probe deadlines. Use `{ verifyAudio: false }` only when metadata-only results are intended.
+
+### Changes
+
+- Update `hyperttp` to `^0.7.4`.
+
+- Replace single-provider `search()` with concurrent provider-group search and bounded, abortable selected-track/audio-sample verification by default.
+- Export source-aware `SearchTrack`, `SearchSource`, `SearchAvailability`, and `SearchOptions`; group conservative metadata matches, prefer available sources, preserve every source ID/URL, and reject ambiguous bare-ID lookups.
+- Share a five-second search deadline across each provider’s mirrors; isolate partial failures, avoid stale search caches, and add deterministic aggregation/cancellation/probe tests.
+
+- Add opt-in `smoke:audio` diagnostics across three providers: timed search, audio resolution and bounded MP3 download checks, with optional full-response download.
+
+- Add `getAlbumByUrl()` for Hitmo.net, exported `Album`/`AlbumTrack` types and structured `AlbumError`; preserve album order, bind membership to the requested album, and expose pagination completeness.
+- Use public `fileId` track URLs for album entries, retain internal IDs as `sourceId`, and add offline album regression coverage.
+
+- Add a third `hitmonet` provider for `music.hitmo.net`, with `/track/<id>` pages and `/search/<query>?type=tracks` searches.
+- Bind Hitmo.net metadata and audio to the selected RSC `item`; reject conflicting data and never fall back to recommendations, radio, or download markup.
+- Include the new site in default discovery and environment configuration, trust Hitmo.net audio CDNs, and retain source-host-aware ID resolution.
+- Add offline provider and public API regression tests for the third format, route selection, search sources, and unsafe/conflicting audio data.
+
 ## [1.3.0] - 2026-11-01
 
 - Require exact normalized artist/title intent for structured searches and all whole-word tokens for plain queries; retain explicitly requested alternate versions.
