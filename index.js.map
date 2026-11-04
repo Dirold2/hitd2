@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/index.ts"],
+  "sourcesContent": ["export { HITApi } from \"./api/HITApi.js\";\nexport { TrackNotFoundError, AudioExtractionError, AlbumError } from \"./core/errors.js\";\nexport type { AlbumErrorCode } from \"./core/errors.js\";\nexport type { Album, AlbumTrack } from \"./models/album.js\";\nexport type { TrackMeta } from \"./models/track.js\";\nexport type { TrackAudio } from \"./models/audio.js\";\nexport type {\n  InitializeOptions,\n  InitializationReport,\n  ProviderInitializationStatus,\n  SearchDiagnostic,\n  SearchOptions,\n  SearchAvailability,\n  SearchSource,\n  SearchTrack,\n} from \"./models/search.js\";\n"],
+  "mappings": "aAAA,OAAS,WAAc,kBACvB,OAAS,mBAAoB,qBAAsB,eAAkB",
+  "names": []
+}

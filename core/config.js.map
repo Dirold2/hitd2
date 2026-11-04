@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/core/config.ts"],
+  "sourcesContent": ["export const DEFAULT_HTTP_CONFIG = {\n  timeout: 15_000,\n  maxRetries: 2,\n  userAgent:\n    \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36\",\n  enableCache: false,\n  verbose: true,\n  maxResponseBytes: 100 * 1024 * 1024,\n  logger: (level: string, message: string, meta?: unknown) => {\n    console.log(`[HTTP ${level.toUpperCase()}] ${message}`, meta ?? \"\");\n  },\n};\n"],
+  "mappings": "aAAO,aAAM,oBAAsB,CACjC,QAAS,KACT,WAAY,EACZ,UACE,kHACF,YAAa,GACb,QAAS,GACT,iBAAkB,UAClB,OAAQ,CAACA,EAAeC,EAAiBC,IAAkB,CACzD,QAAQ,IAAI,SAASF,EAAM,YAAW,CAAE,KAAKC,CAAO,GAAIC,GAAQ,EAAE,CACpE",
+  "names": ["level", "message", "meta"]
+}

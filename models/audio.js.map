@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["audio.js"],
+  "sourcesContent": ["export {};\n//# sourceMappingURL=audio.js.map"],
+  "mappings": "aAAA",
+  "names": []
+}

@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/providers/registry.ts"],
+  "sourcesContent": ["import { providerForHost } from \"../core/hosts.js\";\nimport type { SiteProvider } from \"./base.js\";\n\nexport class ProviderRegistry {\n  constructor(private readonly providers: SiteProvider[]) {}\n\n  resolve(host: string, html?: string): SiteProvider {\n    return (\n      this.providers.find((p) => p.name === providerForHost(host)) ??\n      this.providers.find((p) => p.matches(host, html)) ??\n      this.providers[0]!\n    );\n  }\n}\n"],
+  "mappings": "aAAA,OAAS,mBAAAA,MAAuB,mBAG1B,aAAO,gBAAgB,CACE,UAA7B,YAA6BC,EAAyB,gBAAzBA,CAA4B,CAEzD,QAAQC,EAAcC,EAAa,CACjC,OACE,KAAK,UAAU,KAAMC,GAAMA,EAAE,OAASJ,EAAgBE,CAAI,CAAC,GAC3D,KAAK,UAAU,KAAME,GAAMA,EAAE,QAAQF,EAAMC,CAAI,CAAC,GAChD,KAAK,UAAU,CAAC,CAEpB",
+  "names": ["providerForHost", "providers", "host", "html", "p"]
+}

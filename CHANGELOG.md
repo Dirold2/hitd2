@@ -1,14 +1,5 @@
 # Changelog
 
-## [2.0.1] - 2026-11-04
-
-- Add optional, concurrent-safe `HITApi.initialize(options?)` startup diagnostic search and exported `InitializeOptions`, `InitializationReport`, `ProviderInitializationStatus`: default query `music`, 1500ms provider budget, no audio verification, five-minute per-instance cooldown.
-- Temporarily skip whole failed provider groups in subsequent searches, including ordinary search failures; retry automatically after cooldown. Empty HTTP+parse success and successful mirror fallback remain healthy. All-provider initialization failure returns statuses rather than rejecting startup; no permanent disable or background probes.
-- Preserve `onDiagnostic` event semantics using a shared mirror-chain helper; add offline initialization, cooldown expiry/recovery, fallback, isolation and concurrent/idempotent regression tests.
-
-- Add opt-in `SearchOptions.onDiagnostic` and exported `SearchDiagnostic` union: per-attempt mirror provider/host, success/error/timeout, duration and successful metadata count; one total completion duration/result count, including empty and rejected calls.
-- Keep diagnostic events free of queries, URLs, auth, HTML and error details; ignore callback throws/rejections without changing provider waiting, failover or ranking. Add offline regression coverage.
-
 ## [2.0.0] - 2026-11-03
 
 ### Migration
