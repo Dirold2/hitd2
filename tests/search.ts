@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { HITApi } from "../src/api/HITApi.js";
+import { HITApi, type SearchDiagnostic } from "../src/index.js";
 import { HttpClient } from "../src/core/http.js";
 
 const originalHosts = process.env.HITD2_HOSTS;
@@ -95,8 +95,8 @@ try {
   outage = false;
   assert.equal(
     (await failover.search("Artist", 20, { verifyAudio: false }))[0]!.sources.length,
-    2,
-    "partial outages aren't cached",
+    1,
+    "failed provider groups remain in cooldown even if transport recovers",
   );
 
   configure();
@@ -155,7 +155,21 @@ try {
       }
     }) as never,
   });
-  const timed = await bounded.search("Artist", 20, { probeTimeoutMs: 15 });
+  const verificationEvents: SearchDiagnostic[] = [];
+  const timed = await bounded.search("Artist", 20, {
+    probeTimeoutMs: 15,
+    onDiagnostic: (event) => {
+      verificationEvents.push(event);
+    },
+  });
+  assert.deepEqual(
+    verificationEvents.map((event) => event.type),
+    ["mirror", "complete"],
+  );
+  const verificationComplete = verificationEvents[1]!;
+  assert(verificationComplete.type === "complete");
+  assert.equal(verificationComplete.trackCount, timed.length);
+  assert(verificationComplete.durationMs > verificationEvents[0]!.durationMs);
   assert.equal(pageCount, 6);
   assert.equal(maximum, 3);
   assert.equal(active, 0);
@@ -243,6 +257,146 @@ try {
     callsBeforeZeroBudget,
     "exhausted budgets never launch a mirror",
   );
+
+  // Diagnostics report attempts, not skipped mirrors, and never expose payloads.
+  configure(["rus.hitmos.fm", "hitmos.fm", "rue.hitmoz.org", "music.hitmo.net"]);
+  const diagnostics: SearchDiagnostic[] = [];
+  const diagnosticCalls: string[] = [];
+  const diagnosticApi = new HITApi({
+    sessionCookie: "private-auth-secret",
+    httpClient: client(async (url, signal) => {
+      diagnosticCalls.push(url.hostname);
+      if (url.hostname === "rus.hitmos.fm")
+        throw new Error("private-query https://secret.example private-auth-secret <html>");
+      if (url.hostname === "rue.hitmoz.org") return pending(signal);
+      return ok(list(url.hostname));
+    }) as never,
+  });
+  const diagnosticResults = await diagnosticApi.search("Artist", 1, {
+    verifyAudio: false,
+    searchTimeoutMs: 30,
+    onDiagnostic: (event) => {
+      diagnostics.push(event);
+    },
+  });
+  assert.equal(diagnosticResults.length, 1);
+  assert.equal(diagnosticResults[0]!.sources.length, 2);
+  assert.equal(diagnostics.length, diagnosticCalls.length + 1);
+  const mirrors = diagnostics.filter((event) => event.type === "mirror");
+  assert.deepEqual(
+    mirrors.map((event) => [event.host, event.provider, event.outcome]).sort(),
+    [
+      ["rus.hitmos.fm", "hitmos", "error"],
+      ["hitmos.fm", "hitmos", "success"],
+      ["rue.hitmoz.org", "hitmoz", "timeout"],
+      ["music.hitmo.net", "hitmonet", "success"],
+    ].sort(),
+  );
+  for (const event of diagnostics) {
+    assert(Number.isFinite(event.durationMs) && event.durationMs >= 0);
+    assert.deepEqual(
+      Object.keys(event).sort(),
+      (event.type === "complete"
+        ? ["type", "durationMs", "trackCount"]
+        : event.outcome === "success"
+          ? ["type", "provider", "host", "durationMs", "outcome", "trackCount"]
+          : ["type", "provider", "host", "durationMs", "outcome"]
+      ).sort(),
+    );
+    if (event.type === "mirror" && event.outcome === "success") assert.equal(event.trackCount, 1);
+  }
+  const complete = diagnostics.at(-1)!;
+  assert.equal(complete.type, "complete");
+  if (complete.type === "complete") {
+    assert.equal(complete.trackCount, diagnosticResults.length);
+    assert(complete.durationMs >= Math.max(...mirrors.map((event) => event.durationMs)));
+  }
+  assert(!/private|secret|https|html/.test(JSON.stringify(diagnostics)));
+
+  configure([hosts[0]!]);
+  const emptyApi = new HITApi({ httpClient: client(async () => ok(rsc({ list: [] }))) as never });
+  for (const [query, limit] of [
+    ["Artist", 20],
+    ["", 20],
+    ["Artist", 0],
+  ] as const) {
+    const events: SearchDiagnostic[] = [];
+    assert.deepEqual(
+      await emptyApi.search(query, limit, {
+        verifyAudio: false,
+        onDiagnostic: (event) => {
+          events.push(event);
+        },
+      }),
+      [],
+    );
+    assert.equal(events.length, query && limit ? 2 : 1);
+    const completion = events.at(-1)!;
+    assert(completion.type === "complete");
+    assert.equal(completion.trackCount, 0);
+    if (query && limit) assert.equal(events[0]!.type === "mirror" && events[0]!.outcome, "success");
+  }
+
+  const failedEvents: SearchDiagnostic[] = [];
+  await assert.rejects(
+    () =>
+      diagnosticApi.search("Artist", 20, {
+        searchTimeoutMs: 30,
+        onDiagnostic: (event) => {
+          failedEvents.push(event);
+        },
+      }),
+    AggregateError,
+  );
+  assert.deepEqual(
+    failedEvents.map((event) => event.type),
+    ["mirror", "complete"],
+  );
+  assert.equal(failedEvents[0]!.type === "mirror" && failedEvents[0]!.outcome, "error");
+  const failedComplete = failedEvents[1]!;
+  assert(failedComplete.type === "complete");
+  assert.equal(failedComplete.trackCount, 0);
+  failedEvents.length = 0;
+  await assert.rejects(
+    () =>
+      diagnosticApi.search("Artist", 20, {
+        searchTimeoutMs: 0,
+        onDiagnostic: (event) => {
+          failedEvents.push(event);
+        },
+      }),
+    AggregateError,
+  );
+  assert.deepEqual(
+    failedEvents.map((event) => event.type),
+    ["complete"],
+  );
+
+  // A callback cannot replace the original failure or turn success into failover.
+  let callbackCalls = 0;
+  const throwingDiagnostic = () => {
+    callbackCalls++;
+    throw new Error("diagnostic callback failure");
+  };
+  assert.deepEqual(await emptyApi.search("Artist", 20, { onDiagnostic: throwingDiagnostic }), []);
+  assert.equal(callbackCalls, 2);
+  await assert.rejects(
+    () =>
+      diagnosticApi.search("Artist", 20, {
+        onDiagnostic: throwingDiagnostic,
+      }),
+    (error: unknown) =>
+      error instanceof AggregateError && error.message === "All search providers failed",
+  );
+  assert.deepEqual(
+    await emptyApi.search("Artist", 20, {
+      onDiagnostic: async () => {
+        throw new Error("async diagnostic failure");
+      },
+    }),
+    [],
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   configure([hosts[0]!]);
   const identities = new HITApi({

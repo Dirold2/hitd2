@@ -223,12 +223,25 @@ async function testSearchHttpErrorsAreNotCached(): Promise<void> {
   const api = new HITApi({ httpClient: client as never });
   const retry = (api as unknown as { retry: Retry }).retry;
   retry.resolveHost = async () => "rue.hitmoz.org";
-  await assert.rejects(
-    () => api.search("Artist - Song", 20, { verifyAudio: false }),
-    AggregateError,
-  );
-  assert.equal((await api.search("Artist - Song", 20, { verifyAudio: false }))[0]?.id, "42");
-  assert.equal(client.calls, 2);
+  const originalNow = Date.now;
+  const now = Date.now();
+  Date.now = () => now;
+  try {
+    await assert.rejects(
+      () => api.search("Artist - Song", 20, { verifyAudio: false }),
+      AggregateError,
+    );
+    await assert.rejects(
+      () => api.search("Artist - Song", 20, { verifyAudio: false }),
+      AggregateError,
+    );
+    assert.equal(client.calls, 1, "failed provider is temporarily skipped");
+    Date.now = () => now + 300_001;
+    assert.equal((await api.search("Artist - Song", 20, { verifyAudio: false }))[0]?.id, "42");
+    assert.equal(client.calls, 2, "HTTP error did not cache empty results");
+  } finally {
+    Date.now = originalNow;
+  }
 }
 
 async function testUnverifiedAudioIsRejected(): Promise<void> {

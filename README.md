@@ -44,12 +44,55 @@ console.log(track, audio);
 | `httpClient`    | `HyperClient` | —       | Custom HTTP client instance               |
 | `sessionCookie` | `string`      | —       | Session cookie for authenticated requests |
 
+### `initialize(options?): Promise<InitializationReport>`
+
+Optional startup diagnostic search; no constructor network requests or homepage probes.
+
+```ts
+import { HITApi, type InitializationReport } from "hitd2";
+
+const api = new HITApi();
+const report: InitializationReport = await api.initialize();
+for (const group of report.providers) {
+  console.log(group.provider, group.status);
+  if (group.status === "temporarily_disabled") console.log(group.retryAt);
+}
+```
+
+| `InitializeOptions` field | Default   | Meaning                                                           |
+| ------------------------- | --------- | ----------------------------------------------------------------- |
+| `query`                   | `"music"` | Non-empty diagnostic search query                                 |
+| `searchTimeoutMs`         | `1500`    | Shared mirror-chain budget per provider (groups run concurrently) |
+| `cooldownMs`              | `300000`  | Temporary exclusion duration after a whole provider chain fails   |
+
+Exports: `InitializeOptions`, `InitializationReport`, `ProviderInitializationStatus`.
+The report is `{ providers: ProviderInitializationStatus[] }`; each entry contains
+`provider` (`"hitmos" | "hitmoz" | "hitmonet"`), ordered `hosts`, and either
+`{ status: "healthy" }` or `{ status: "temporarily_disabled", retryAt: number }`.
+`retryAt` is a Unix timestamp in milliseconds. HTTP success plus successful parsing is
+healthy even with zero accepted/relevant tracks. A failed mirror followed by a successful
+fallback does not disable the group. Initialization never verifies audio or probes CDNs.
+
+All-provider outage resolves with disabled statuses, so it does not break plugin startup.
+Invalid options/environment configuration still reject. Numeric options accept integers
+from 0 to 2147483647; zero cooldown permits immediate retries. Concurrent and repeated calls
+share one initialization run (first call's options win). Returned reports are defensive
+snapshots of that run, not live health; later `initialize()` calls do not re-run the diagnostic.
+
+Cooldown is per `HITApi` instance and applies to ordinary searches too, including without
+initialization (five minutes by default). A whole-chain failure/exhausted deadline starts
+or refreshes cooldown; any successful mirror clears it. Searches skip disabled groups
+without mirror diagnostic events, and automatically retry normally once cooldown expires.
+There is no permanent disable, background timer or recovery probe. Track/audio lookup is
+unaffected. The diagnostic query is sent to configured providers just like a normal search.
+
 ### `search(query, limit?, options?)`
 
-Search all configured provider groups concurrently. Returns `SearchTrack[]`.
+Search all configured provider groups not currently in cooldown concurrently. Returns `SearchTrack[]`.
 Mirrors within one provider are tried in order under one shared deadline; no homepage
 probe is required. A failed provider does not discard another provider’s results.
-If all providers fail, throws `AggregateError`. Search results are not cached.
+If all attempted providers fail or all groups are in cooldown, throws `AggregateError`.
+Search results are not cached.
 
 Each result adds `host`, `url`, and `sources` to `TrackMeta`. Each source retains its
 `provider`, native `id`, `host`, page `url`, availability evidence, and `audioUrl` when
@@ -58,12 +101,13 @@ known durations within two seconds are grouped; this is metadata-based, not an a
 The primary result ID/host/URL belongs to an available source when possible, then an
 unchecked source, otherwise a failed source. Use `getAudio(track.url)`, not bare IDs.
 
-| Search option | Default | Meaning |
-| --- | --- | --- |
-| `verifyAudio` | `true` | Extract and probe selected sources |
-| `maxProbes` | `6` | Maximum source checks per call |
-| `probeTimeoutMs` | `3000` | Page extraction plus audio sample deadline per source |
-| `searchTimeoutMs` | `5000` | Shared mirror-chain budget per provider |
+| Search option     | Default | Meaning                                                                |
+| ----------------- | ------- | ---------------------------------------------------------------------- |
+| `verifyAudio`     | `true`  | Extract and probe selected sources                                     |
+| `maxProbes`       | `6`     | Maximum source checks per call                                         |
+| `probeTimeoutMs`  | `3000`  | Page extraction plus audio sample deadline per source                  |
+| `searchTimeoutMs` | `5000`  | Shared mirror-chain budget per provider                                |
+| `onDiagnostic`    | —       | Optional `(event: SearchDiagnostic) => void \| Promise<void>` callback |
 
 At most three sources are checked concurrently per call. Audio requests download up
 to a 4 KiB sample, reject untrusted redirects/error bodies and check an MP3 signature.
@@ -71,7 +115,7 @@ Availability is `available`, `unavailable`, `timeout`, `error`, or `unchecked`; 
 is not proof of absence. Results are retained even if no source is verified. Check
 `sources` before playback. `available` describes the sample at `checkedAt`, not a full
 download guarantee or proof of recording contents. Calls add CDN traffic and disclose
-the query to every configured provider. Concurrent search calls have independent budgets.
+the query to every non-skipped provider. Concurrent search calls have independent budgets.
 
 ```ts
 const results = await api.search("Скриптонит - Точно не нужно новых", 10);
@@ -81,6 +125,43 @@ for (const track of results) {
 // Explicitly skip verification when only metadata is needed:
 const metadata = await api.search("Face", 20, { verifyAudio: false });
 ```
+
+### Search diagnostics (opt-in)
+
+```ts
+import type { SearchDiagnostic } from "hitd2";
+
+const events: SearchDiagnostic[] = [];
+await api.search("Artist", 20, {
+  onDiagnostic: (event) => {
+    events.push(event);
+  },
+});
+```
+
+`SearchDiagnostic` is an exported discriminated union:
+
+- `{ type: "mirror", provider, host, durationMs, outcome: "success", trackCount }`
+- `{ type: "mirror", provider, host, durationMs, outcome: "error" | "timeout" }`
+- `{ type: "complete", durationMs, trackCount }`
+
+Each actually attempted mirror emits one event after its request and parsing/filtering;
+`trackCount` on success counts accepted metadata before relevance ranking, grouping and the
+result limit (including zero). `timeout` means that request's deadline fired; other transport,
+HTTP or parsing failures are `error`. Mirrors skipped because the shared budget expired or
+an earlier mirror succeeded emit nothing. Provider groups still use `Promise.allSettled`:
+partial results do not return before the remaining groups settle.
+
+Exactly one `complete` event is emitted at the end of each call, including empty queries,
+zero limits, invalid options and rejected searches. Its duration includes ranking and optional
+audio verification; its count is the final returned track count, or zero on rejection. It does
+not imply success; the search promise remains the authority for success/failure. Durations use
+`performance.now()` in milliseconds. Verification requests do not emit mirror events.
+
+Events contain only the fields above: no query, URL, credentials, HTML, error object or error
+message. Diagnostics are disabled unless a callback is supplied. Callbacks are invoked inline,
+not awaited; thrown exceptions and rejected promises are ignored. Keep handlers fast: synchronous
+work can consume the existing shared deadline. No logging, network telemetry or dependency is added.
 
 Migration: this replaces single-provider search. Old `TrackMeta` fields remain, but
 primary IDs may change when a different source is verified. Persist full track URLs.

@@ -18,7 +18,16 @@ import { TrackNotFoundError, AudioExtractionError, AlbumError } from "../core/er
 import type { Album } from "../models/album.js";
 
 import { probeAudio } from "../core/audio-probe.js";
-import type { SearchOptions, SearchSource, SearchTrack } from "../models/search.js";
+import type { HostProvider } from "../core/hosts.js";
+import type {
+  InitializeOptions,
+  InitializationReport,
+  ProviderInitializationStatus,
+  SearchDiagnostic,
+  SearchOptions,
+  SearchSource,
+  SearchTrack,
+} from "../models/search.js";
 import type { TrackMeta } from "../models/track.js";
 import type { TrackAudio } from "../models/audio.js";
 
@@ -139,6 +148,9 @@ export class HITApi {
   private readonly http: HttpClient;
   private readonly retry: Retry;
   private readonly providers: ProviderRegistry;
+  private readonly providerRetryAt = new Map<HostProvider, number>();
+  private cooldownMs = 5 * 60_000;
+  private initialization?: Promise<InitializationReport>;
 
   private sessionCookie?: string;
   private readonly fetchAudio?: typeof globalThis.fetch;
@@ -190,6 +202,112 @@ export class HITApi {
     ]);
   }
 
+  /** First call wins; provider outages are reported, not thrown. */
+  initialize(options: InitializeOptions = {}): Promise<InitializationReport> {
+    if (!this.initialization) {
+      // Defer execution so concurrent/reentrant calls see the same pending run.
+      this.initialization = Promise.resolve().then(async () => {
+        const query = options.query ?? "music";
+        if (!normalizeQuery(query)) throw new RangeError("query must not be empty");
+        const timeoutMs = searchNumber(options.searchTimeoutMs, 1500, "searchTimeoutMs");
+        const cooldownMs = searchNumber(options.cooldownMs, 5 * 60_000, "cooldownMs");
+        const groups = this.searchGroups();
+        this.cooldownMs = cooldownMs;
+        const deadline = performance.now() + timeoutMs;
+        const providers = await Promise.all(
+          [...groups].map(async ([provider, hosts]): Promise<ProviderInitializationStatus> => {
+            try {
+              await this.searchProvider(provider, hosts, query, deadline, () => {});
+              return { provider, hosts, status: "healthy" };
+            } catch {
+              return {
+                provider,
+                hosts,
+                status: "temporarily_disabled",
+                retryAt: this.providerRetryAt.get(provider)!,
+              };
+            }
+          }),
+        );
+        return { providers };
+      });
+    }
+    // Keep the stored snapshot safe from caller mutation.
+    return this.initialization.then((report) => structuredClone(report));
+  }
+
+  private searchGroups(): Map<HostProvider, string[]> {
+    const groups = new Map<HostProvider, string[]>();
+    for (const host of getSearchHosts()) {
+      const provider = providerForHost(host)!;
+      groups.set(provider, [...(groups.get(provider) ?? []), host]);
+    }
+    return groups;
+  }
+
+  private async searchProvider(
+    provider: HostProvider,
+    hosts: string[],
+    query: string,
+    deadline: number,
+    emit: (event: SearchDiagnostic) => void,
+  ): Promise<SearchTrack[]> {
+    const errors: unknown[] = [];
+    for (const host of hosts) {
+      const remainingMs = deadline - performance.now();
+      if (remainingMs <= 0) {
+        errors.push(new DOMException("Provider search deadline exceeded", "TimeoutError"));
+        break;
+      }
+      const mirrorStarted = performance.now();
+      let timedOut = false;
+      try {
+        const html = await this.fetchSearchHtml(host, query.trim(), Math.ceil(remainingMs), () => {
+          timedOut = true;
+        });
+        const tracks = this.providerFor(host)
+          .parseSearch(parseHtml(html), host)
+          .map(cleanTrack)
+          .filter((track): track is TrackMeta => !!track && isAcceptableTrack(track));
+        const result = tracks.map((track): SearchTrack => ({
+          ...track,
+          host,
+          url: `https://${host}${trackPagePath(host, track.id)}`,
+          sources: [
+            {
+              host,
+              provider,
+              id: track.id,
+              url: `https://${host}${trackPagePath(host, track.id)}`,
+              availability: { status: "unchecked" },
+            },
+          ],
+        }));
+        this.providerRetryAt.delete(provider);
+        emit({
+          type: "mirror",
+          provider,
+          host,
+          durationMs: performance.now() - mirrorStarted,
+          outcome: "success",
+          trackCount: result.length,
+        });
+        return result;
+      } catch (error) {
+        emit({
+          type: "mirror",
+          provider,
+          host,
+          durationMs: performance.now() - mirrorStarted,
+          outcome: timedOut ? "timeout" : "error",
+        });
+        errors.push(error);
+      }
+    }
+    this.providerRetryAt.set(provider, Date.now() + this.cooldownMs);
+    throw new AggregateError(errors, `Search mirrors failed: ${hosts.join(", ")}`);
+  }
+
   setSessionCookie(cookie: string): void {
     this.sessionCookie = cookie;
     this.retry.setSessionCookie(cookie);
@@ -212,7 +330,12 @@ export class HITApi {
     return this.providers.resolve(host, html);
   }
 
-  private async fetchSearchHtml(host: string, query: string, timeoutMs: number): Promise<string> {
+  private async fetchSearchHtml(
+    host: string,
+    query: string,
+    timeoutMs: number,
+    onTimeout: () => void,
+  ): Promise<string> {
     const request = new Request({
       scheme: "https",
       host,
@@ -225,10 +348,10 @@ export class HITApi {
       headers: this.buildHeaders(host, "text/html"),
     });
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(new DOMException("Search deadline exceeded", "TimeoutError")),
-      timeoutMs,
-    );
+    const timer = setTimeout(() => {
+      onTimeout();
+      controller.abort(new DOMException("Search deadline exceeded", "TimeoutError"));
+    }, timeoutMs);
     try {
       const response = await this.http.getTextResponse({
         url: request.url,
@@ -309,120 +432,107 @@ export class HITApi {
     limit = DEFAULT_SEARCH_LIMIT,
     options: SearchOptions = {},
   ): Promise<SearchTrack[]> {
-    const normalizedQuery = normalizeQuery(query);
-    if (!normalizedQuery) return [];
-    const safeLimit = Math.min(
-      MAX_SEARCH_LIMIT,
-      Math.max(0, Number.isFinite(limit) ? Math.trunc(limit) : DEFAULT_SEARCH_LIMIT),
-    );
-    if (!safeLimit) return [];
-    const maxProbes = searchNumber(options.maxProbes, 6, "maxProbes");
-    const probeTimeoutMs = searchNumber(options.probeTimeoutMs, 3000, "probeTimeoutMs");
-    const searchTimeoutMs = searchNumber(options.searchTimeoutMs, 5000, "searchTimeoutMs");
-    const groups = new Map<string, string[]>();
-    for (const host of getSearchHosts()) {
-      const key = providerForHost(host)!;
-      groups.set(key, [...(groups.get(key) ?? []), host]);
-    }
-    const searchDeadline = performance.now() + searchTimeoutMs;
-    const responses = await Promise.allSettled(
-      [...groups.values()].map(async (hosts) => {
-        const errors: unknown[] = [];
-        for (const host of hosts) {
-          const remainingMs = searchDeadline - performance.now();
-          if (remainingMs <= 0) {
-            errors.push(new DOMException("Provider search deadline exceeded", "TimeoutError"));
-            break;
-          }
-          try {
-            const html = await this.fetchSearchHtml(host, query.trim(), Math.ceil(remainingMs));
-            const tracks = this.providerFor(host)
-              .parseSearch(parseHtml(html), host)
-              .map(cleanTrack)
-              .filter((track): track is TrackMeta => !!track && isAcceptableTrack(track));
-            return tracks.map((track): SearchTrack => ({
-              ...track,
-              host,
-              url: `https://${host}${trackPagePath(host, track.id)}`,
-              sources: [
-                {
-                  host,
-                  provider: providerForHost(host)!,
-                  id: track.id,
-                  url: `https://${host}${trackPagePath(host, track.id)}`,
-                  availability: { status: "unchecked" },
-                },
-              ],
-            }));
-          } catch (error) {
-            errors.push(error);
-          }
-        }
-        throw new AggregateError(errors, `Search mirrors failed: ${hosts.join(", ")}`);
-      }),
-    );
-    const successes = responses.filter((response) => response.status === "fulfilled");
-    if (!successes.length) {
-      throw new AggregateError(
-        responses.map((response) => (response.status === "rejected" ? response.reason : undefined)),
-        "All search providers failed",
+    const started = performance.now();
+    const onDiagnostic = options.onDiagnostic;
+    const emit = (event: SearchDiagnostic): void => {
+      if (!onDiagnostic) return;
+      try {
+        const pending = onDiagnostic(event);
+        if (pending) void Promise.resolve(pending).catch(() => {});
+      } catch {
+        // Diagnostics must not affect search results or mirror failover.
+      }
+    };
+    let trackCount = 0;
+    try {
+      const normalizedQuery = normalizeQuery(query);
+      if (!normalizedQuery) return [];
+      const safeLimit = Math.min(
+        MAX_SEARCH_LIMIT,
+        Math.max(0, Number.isFinite(limit) ? Math.trunc(limit) : DEFAULT_SEARCH_LIMIT),
       );
-    }
-    const candidates = successes.flatMap((response) => response.value);
-    // Record every observed source before grouping/limiting, including collisions
-    // between different recordings that happen to share a native ID.
-    for (const track of candidates) {
-      this.searchTrackCache.set(`${track.host}:${track.id}`, cloneTrack(track));
-      const previous = this.sourceHosts.get(track.id);
-      this.sourceHosts.set(
-        track.id,
-        previous === null || (previous !== undefined && previous !== track.host)
-          ? null
-          : track.host,
+      if (!safeLimit) return [];
+      const maxProbes = searchNumber(options.maxProbes, 6, "maxProbes");
+      const probeTimeoutMs = searchNumber(options.probeTimeoutMs, 3000, "probeTimeoutMs");
+      const searchTimeoutMs = searchNumber(options.searchTimeoutMs, 5000, "searchTimeoutMs");
+      const groups = this.searchGroups();
+      const searchDeadline = performance.now() + searchTimeoutMs;
+      const responses = await Promise.allSettled(
+        [...groups]
+          .filter(([provider]) => (this.providerRetryAt.get(provider) ?? 0) <= Date.now())
+          .map(([provider, hosts]) =>
+            this.searchProvider(provider, hosts, query, searchDeadline, emit),
+          ),
       );
+      const successes = responses.filter((response) => response.status === "fulfilled");
+      if (!successes.length) {
+        throw new AggregateError(
+          responses.map((response) =>
+            response.status === "rejected" ? response.reason : undefined,
+          ),
+          "All search providers failed",
+        );
+      }
+      const candidates = successes.flatMap((response) => response.value);
+      // Record every observed source before grouping/limiting, including collisions
+      // between different recordings that happen to share a native ID.
+      for (const track of candidates) {
+        this.searchTrackCache.set(`${track.host}:${track.id}`, cloneTrack(track));
+        const previous = this.sourceHosts.get(track.id);
+        this.sourceHosts.set(
+          track.id,
+          previous === null || (previous !== undefined && previous !== track.host)
+            ? null
+            : track.host,
+        );
+      }
+      const ranked = sortTracksByScore(normalizedQuery, candidates) as SearchTrack[];
+      const grouped: SearchTrack[] = [];
+      for (const track of ranked) {
+        const existing = grouped.find(
+          (entry) =>
+            recordingKey(entry) === recordingKey(track) &&
+            entry.duration > 0 &&
+            track.duration > 0 &&
+            Math.abs(entry.duration - track.duration) <= 2,
+        );
+        if (existing) {
+          const source = track.sources[0]!;
+          if (!existing.sources.some((entry) => entry.url === source.url))
+            existing.sources.push(source);
+        } else grouped.push(track);
+      }
+      const results = grouped.slice(0, safeLimit);
+      if (options.verifyAudio !== false) {
+        const sources = results.flatMap((track) => track.sources).slice(0, maxProbes);
+        let next = 0;
+        await Promise.all(
+          Array.from({ length: Math.min(3, sources.length) }, async () => {
+            while (next < sources.length) await this.verifySource(sources[next++]!, probeTimeoutMs);
+          }),
+        );
+      }
+      const preference = (source: SearchSource) =>
+        source.availability.status === "available"
+          ? 0
+          : source.availability.status === "unchecked"
+            ? 1
+            : 2;
+      for (const track of results) {
+        const primary = [...track.sources].sort((a, b) => preference(a) - preference(b))[0]!;
+        Object.assign(track, {
+          id: primary.id,
+          host: primary.host,
+          url: primary.url,
+          uri: `${primary.provider}:track:${primary.id}`,
+        });
+      }
+      const output = structuredClone(results);
+      trackCount = output.length;
+      return output;
+    } finally {
+      emit({ type: "complete", durationMs: performance.now() - started, trackCount });
     }
-    const ranked = sortTracksByScore(normalizedQuery, candidates) as SearchTrack[];
-    const grouped: SearchTrack[] = [];
-    for (const track of ranked) {
-      const existing = grouped.find(
-        (entry) =>
-          recordingKey(entry) === recordingKey(track) &&
-          entry.duration > 0 &&
-          track.duration > 0 &&
-          Math.abs(entry.duration - track.duration) <= 2,
-      );
-      if (existing) {
-        const source = track.sources[0]!;
-        if (!existing.sources.some((entry) => entry.url === source.url))
-          existing.sources.push(source);
-      } else grouped.push(track);
-    }
-    const results = grouped.slice(0, safeLimit);
-    if (options.verifyAudio !== false) {
-      const sources = results.flatMap((track) => track.sources).slice(0, maxProbes);
-      let next = 0;
-      await Promise.all(
-        Array.from({ length: Math.min(3, sources.length) }, async () => {
-          while (next < sources.length) await this.verifySource(sources[next++]!, probeTimeoutMs);
-        }),
-      );
-    }
-    const preference = (source: SearchSource) =>
-      source.availability.status === "available"
-        ? 0
-        : source.availability.status === "unchecked"
-          ? 1
-          : 2;
-    for (const track of results) {
-      const primary = [...track.sources].sort((a, b) => preference(a) - preference(b))[0]!;
-      Object.assign(track, {
-        id: primary.id,
-        host: primary.host,
-        url: primary.url,
-        uri: `${primary.provider}:track:${primary.id}`,
-      });
-    }
-    return structuredClone(results);
   }
 
   private sourceHost(id: string): string | undefined {

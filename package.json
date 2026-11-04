@@ -1,6 +1,6 @@
 {
   "name": "hitd2",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
   "keywords": [
     "api",
@@ -39,10 +39,11 @@
     "test:scoring": "node --import tsx tests/scoring.ts",
     "test:retry": "node --import tsx tests/retry.ts",
     "test:audio-urls": "node --import tsx tests/audio-urls.ts",
-    "test": "npm run test:search && npm run test:audio-probe && npm run test:albums && npm run test:hitmonet && npm run test:hosts && npm run test:providers && npm run test:scoring && npm run test:retry && npm run test:audio-urls",
+    "test": "npm run test:initialize && npm run test:search && npm run test:audio-probe && npm run test:albums && npm run test:hitmonet && npm run test:hosts && npm run test:providers && npm run test:scoring && npm run test:retry && npm run test:audio-urls",
     "smoke:test": "dotenv -e .env -- tsx example/test.ts",
     "smoke:summary": "tsx smoke-runner.ts",
     "smoke:audio": "tsx example/search-audio.ts",
+    "test:initialize": "node --import tsx tests/initialize.ts",
     "test:search": "node --import tsx tests/search.ts",
     "test:audio-probe": "node --import tsx tests/audio-probe.ts"
   },
@@ -57,7 +58,7 @@
     "chalk": "^6.0.1",
     "dotenv-cli": "^11.1.0",
     "oxfmt": "^0.75.0",
-    "oxlint": "^1.90.0",
+    "oxlint": "^1.91.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

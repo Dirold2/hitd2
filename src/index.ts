@@ -5,6 +5,10 @@ export type { Album, AlbumTrack } from "./models/album.js";
 export type { TrackMeta } from "./models/track.js";
 export type { TrackAudio } from "./models/audio.js";
 export type {
+  InitializeOptions,
+  InitializationReport,
+  ProviderInitializationStatus,
+  SearchDiagnostic,
   SearchOptions,
   SearchAvailability,
   SearchSource,

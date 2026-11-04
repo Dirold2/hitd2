@@ -17,11 +17,16 @@ function hasMp3Signature(bytes: Uint8Array): boolean {
     const c = bytes[i + 2]!;
     const d = bytes[i + 3]!;
     if (
-      a === 0xff && (b & 0xe0) === 0xe0 &&
-      (b & 0x18) !== 0x08 && (b & 0x06) === 0x02 &&
-      (c & 0xf0) !== 0 && (c & 0xf0) !== 0xf0 &&
-      (c & 0x0c) !== 0x0c && (d & 0x03) !== 0x02
-    ) return true;
+      a === 0xff &&
+      (b & 0xe0) === 0xe0 &&
+      (b & 0x18) !== 0x08 &&
+      (b & 0x06) === 0x02 &&
+      (c & 0xf0) !== 0 &&
+      (c & 0xf0) !== 0xf0 &&
+      (c & 0x0c) !== 0x0c &&
+      (d & 0x03) !== 0x02
+    )
+      return true;
   }
   return false;
 }
@@ -76,16 +81,20 @@ export async function probeAudio(
         signal: controller.signal,
       });
       // Also dispose of a late response from a fetch implementation ignoring abort.
-      void pending.then((response) => {
-        if (controller.signal.aborted) cancel(response.body);
-      }, () => undefined);
+      void pending.then(
+        (response) => {
+          if (controller.signal.aborted) cancel(response.body);
+        },
+        () => undefined,
+      );
       const response = await Promise.race([pending, aborted]);
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       try {
         if (response.body) reader = response.body.getReader();
         if ([301, 302, 303, 307, 308].includes(response.status)) {
           const location = response.headers.get("location");
-          if (!location || redirects >= 5) return result("unavailable", "Invalid or excessive redirects");
+          if (!location || redirects >= 5)
+            return result("unavailable", "Invalid or excessive redirects");
           let next: string;
           try {
             next = new URL(location, url).href;
@@ -117,7 +126,10 @@ export async function probeAudio(
           length += count;
           if (hasMp3Signature(sample.subarray(0, length))) return result("available");
         }
-        return result("unavailable", length === 0 ? "Empty audio body" : "No MP3 signature in sample");
+        return result(
+          "unavailable",
+          length === 0 ? "Empty audio body" : "No MP3 signature in sample",
+        );
       } finally {
         // Do not await cancellation: an underlying source may never settle it.
         if (reader) {
