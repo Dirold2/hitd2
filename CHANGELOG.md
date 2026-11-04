@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2] - 2026-11-04
+
+- Add lazy, backpressured `HITApi.streamTrack(trackId, options?, signal?)` with independent cancellation, prompt pending-next/return handling, status/body checks and safe reader cleanup.
+- Export `HITApiOptions`, `StreamTrackOptions`, `StreamTrackAudio`; add injectable `fetchAudio` and URL-free selected-file quality callback. Keep getAudio/getTrack and probe behavior compatible.
+- Redact streaming failures, cancel late responses, and document non-abortable provider resolution and metadata confirmation requirements. Add deterministic offline streaming tests.
+
 ## [2.0.1] - 2026-11-04
 
 - Add optional, concurrent-safe `HITApi.initialize(options?)` startup diagnostic search and exported `InitializeOptions`, `InitializationReport`, `ProviderInitializationStatus`: default query `music`, 1500ms provider budget, no audio verification, five-minute per-instance cooldown.

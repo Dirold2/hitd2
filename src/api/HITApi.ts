@@ -1,4 +1,6 @@
-import { HyperClient, Request } from "hyperttp";
+import { streamAudio } from "../core/stream.js";
+import type { HITApiOptions, StreamTrackOptions } from "../models/stream.js";
+import { Request } from "hyperttp";
 import { CacheManager } from "hcacher";
 
 import { parseHtml } from "../core/html.js";
@@ -154,6 +156,7 @@ export class HITApi {
 
   private sessionCookie?: string;
   private readonly fetchAudio?: typeof globalThis.fetch;
+  private readonly fetchStream?: typeof globalThis.fetch;
 
   /**
    * Stores detailed track metadata.
@@ -177,16 +180,13 @@ export class HITApi {
 
   private readonly audioCache = new CacheManager<TrackAudio>(AUDIO_CACHE_SIZE, AUDIO_CACHE_TTL);
 
-  constructor(options?: {
-    httpClient?: HyperClient;
-    sessionCookie?: string;
-    fetch?: typeof globalThis.fetch;
-  }) {
+  constructor(options?: HITApiOptions) {
     this.http = new HttpClient(
       options?.httpClient,
       options?.httpClient ? undefined : options?.fetch,
     );
     this.fetchAudio = options?.fetch;
+    this.fetchStream = options?.fetchAudio ?? options?.fetch;
 
     this.retry = new Retry({
       httpClient: options?.httpClient,
@@ -767,6 +767,20 @@ export class HITApi {
 
       return cloneTrack(track);
     });
+  }
+
+  /** Lazy, backpressured audio bytes. Each call is an independent opening. */
+  streamTrack(
+    trackId: string,
+    options: StreamTrackOptions = {},
+    signal?: AbortSignal,
+  ): AsyncGenerator<Uint8Array> {
+    return streamAudio(
+      () => this.getAudio(trackId),
+      this.fetchStream ?? globalThis.fetch,
+      options,
+      signal,
+    );
   }
 
   async getAudio(trackId: string, preferredHost?: string): Promise<TrackAudio> {

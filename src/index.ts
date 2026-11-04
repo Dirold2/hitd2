@@ -14,3 +14,5 @@ export type {
   SearchSource,
   SearchTrack,
 } from "./models/search.js";
+
+export type { HITApiOptions, StreamTrackOptions, StreamTrackAudio } from "./models/stream.js";

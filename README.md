@@ -395,3 +395,43 @@ not availability or speed guarantees. Cold timings include host discovery.
 This is an opt-in network diagnostic, not part of `test`/CI. Any failed provider
 produces exit code 1. Queries and requests are sent to the selected sites/CDNs;
 `.env` must be loaded by your runtime or environment.
+
+## Streaming audio
+
+```ts
+import { HITApi, type StreamTrackAudio } from "hitd2";
+
+const api = new HITApi({ fetchAudio: fetch }); // optional injectable streaming transport
+const abort = new AbortController();
+let quality: StreamTrackAudio | undefined;
+for await (const bytes of api.streamTrack("https://music.hitmo.net/track/42", {
+  onAudio: (selected) => { quality = selected; },
+}, abort.signal)) {
+  // Await your consumer here to preserve backpressure. No full-track buffering.
+  await consume(bytes);
+}
+```
+
+`streamTrack(trackId, options?, signal?)` returns `AsyncGenerator<Uint8Array>`.
+Resolution, HTTP and reads start only on demand (`next()`); empty chunks are skipped.
+Every iterator owns its abort controller. Abort interrupts pending `next()` promptly;
+`return()` also interrupts pending work and cancels the body. Use `for await`/`break`
+or explicitly call `return()` when abandoning an iterator. Reader locks are released
+on EOF or after cancellation settles, even when cancellation rejects; cleanup never
+waits for a remote cancellation handshake. Non-success HTTP bodies are cancelled.
+
+`onAudio` is a synchronous callback after HTTP success, before reading bytes. It
+receives only optional `format` and `bitrateKbps`, from the file matching the selected
+URL (format falls back to `TrackAudio.format`). No other file's bitrate is borrowed.
+This is reported file quality, not measured bitrate or proof of playable audio:
+consumers should publish it only after their first nonempty chunk. Callback throws
+fail the stream. Stream failures are redacted; cancellation uses `AbortError` and
+never exposes arbitrary signal reasons or signed URLs.
+
+`getAudio()` has no AbortSignal: cancellation stops waiting for provider resolution,
+not the underlying provider request/cache work. Late resolution never starts audio
+fetch; late fetch responses from abort-ignoring transports are cancelled.
+`fetchAudio` overrides streaming transport only; it defaults to the existing `fetch`
+constructor option, then global fetch. Existing URL APIs and probe behavior remain
+unchanged. Streaming does not decode, validate audio signatures, retry mid-stream,
+or transcode. Exported types: `HITApiOptions`, `StreamTrackOptions`, `StreamTrackAudio`.
