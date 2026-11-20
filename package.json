@@ -1,6 +1,6 @@
 {
   "name": "hitd2",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
   "keywords": [
     "api",
