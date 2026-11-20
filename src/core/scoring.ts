@@ -23,19 +23,27 @@ function parseStructuredQuery(query: string): StructuredQuery | undefined {
   const match = query.normalize("NFKC").match(/^(.+?)\s+[-–—]\s+(.+)$/u);
   if (!match) return undefined;
 
-  const artist = normalize(match[1]!);
+  const artist = match[1]!.trim();
   const title = normalize(match[2]!);
   return artist && title ? { artist, title } : undefined;
 }
 
-function matchesArtist(artist: string, expected: string): boolean {
-  if (normalize(artist) === expected) return true;
-
-  // Only explicit collaboration separators introduce participant identities.
+function artistParticipants(artist: string): string[] {
   return artist
     .normalize("NFKC")
-    .split(/\s+(?:feat\.?|ft\.?|featuring|and)\s+|\s*&\s*/iu)
-    .some((participant) => normalize(participant) === expected);
+    .split(/\s+(?:feat\.?|ft\.?|featuring|and)\s+|\s*[&,]\s*/iu)
+    .map(normalize)
+    .filter(Boolean);
+}
+
+function matchesArtist(artist: string, expected: string): boolean {
+  if (normalize(artist) === normalize(expected)) return true;
+
+  // Compare complete participant identities, not tokens or substrings. Every
+  // requested collaborator must be credited, regardless of separator or order.
+  const actual = new Set(artistParticipants(artist));
+  const requested = artistParticipants(expected);
+  return requested.length > 0 && requested.every((participant) => actual.has(participant));
 }
 
 function containsAllTokens(value: string, expectedTokens: string[]): boolean {

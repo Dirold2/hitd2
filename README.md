@@ -107,7 +107,15 @@ unchecked source, otherwise a failed source. Use `getAudio(track.url)`, not bare
 | `maxProbes`       | `6`     | Maximum source checks per call                                         |
 | `probeTimeoutMs`  | `3000`  | Page extraction plus audio sample deadline per source                  |
 | `searchTimeoutMs` | `5000`  | Shared mirror-chain budget per provider                                |
+| `resultWaitMs`    | `200`   | Additional collection window after the first intent-matching result    |
 | `onDiagnostic`    | —       | Optional `(event: SearchDiagnostic) => void \| Promise<void>` callback |
+
+Search groups run concurrently. Once a provider returns intent-matching candidates,
+other groups have up to `resultWaitMs` to contribute results before their requests are
+cancelled. Slow sources may therefore be omitted; use `resultWaitMs: searchTimeoutMs`
+when collecting every provider is more important than latency. Empty or unrelated
+responses do not trigger early completion. Collection cancellation does not mark a
+provider unhealthy or start its cooldown.
 
 At most three sources are checked concurrently per call. Audio requests download up
 to a 4 KiB sample, reject untrusted redirects/error bodies and check an MP3 signature.
@@ -142,15 +150,15 @@ await api.search("Artist", 20, {
 `SearchDiagnostic` is an exported discriminated union:
 
 - `{ type: "mirror", provider, host, durationMs, outcome: "success", trackCount }`
-- `{ type: "mirror", provider, host, durationMs, outcome: "error" | "timeout" }`
+- `{ type: "mirror", provider, host, durationMs, outcome: "error" | "timeout" | "cancelled" }`
 - `{ type: "complete", durationMs, trackCount }`
 
 Each actually attempted mirror emits one event after its request and parsing/filtering;
 `trackCount` on success counts accepted metadata before relevance ranking, grouping and the
 result limit (including zero). `timeout` means that request's deadline fired; other transport,
 HTTP or parsing failures are `error`. Mirrors skipped because the shared budget expired or
-an earlier mirror succeeded emit nothing. Provider groups still use `Promise.allSettled`:
-partial results do not return before the remaining groups settle.
+an earlier mirror succeeded emit nothing. `cancelled` means an unfinished request was
+aborted after useful results had been collected; it is not a transport failure.
 
 Exactly one `complete` event is emitted at the end of each call, including empty queries,
 zero limits, invalid options and rejected searches. Its duration includes ranking and optional

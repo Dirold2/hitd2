@@ -89,8 +89,32 @@ assert.deepEqual(
 );
 assert.deepEqual(
   ids("Guest & Ann - Song", artists),
-  ["ampersand"],
-  "the full collaboration identity may also match exactly",
+  ["feat", "ft", "featuring", "and", "ampersand"],
+  "the same complete collaboration matches across explicit separators and order",
+);
+
+const flowCandidates = [
+  track("original", "Big Baby Tape and Хаски", "98 Flow", 239),
+  track("missing-guest", "Big Baby Tape", "98 Flow", 236),
+  track("wrong-guest", "Big Baby Tape and Другой", "98 Flow", 239),
+  track("instrumental", "Big Baby Tape and Хаски", "98 Flow (Минус)", 237),
+  track("edition", "Big Baby Tape and Хаски", "98 Flow (Dragonborn 2018)", 239),
+];
+for (const artist of [
+  "Big Baby Tape, Хаски",
+  "Хаски & Big Baby Tape",
+  "Big Baby Tape feat. Хаски",
+]) {
+  assert.deepEqual(
+    ids(`${artist} - 98 Flow`, flowCandidates),
+    ["original"],
+    "98 Flow retains every requested artist and rejects alternate recordings",
+  );
+}
+assert.deepEqual(
+  ids("Ann, Guest - Song", artists),
+  ["feat", "ft", "featuring", "and", "ampersand"],
+  "comma-separated requests require all complete participants, not just the primary artist",
 );
 
 for (const variant of [

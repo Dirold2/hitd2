@@ -79,6 +79,105 @@ try {
     "unchecked",
   );
 
+  // A stalled provider must not hold usable results until the full deadline,
+  // and collection cancellation must not mark that provider unhealthy.
+  configure(["rus.hitmos.fm", "music.hitmo.net"]);
+  const quickEvents: SearchDiagnostic[] = [];
+  let stalledCalls = 0;
+  let stalledAborts = 0;
+  const quick = new HITApi({
+    httpClient: client(async (url, signal) => {
+      if (url.hostname === "rus.hitmos.fm") return ok(list(url.hostname));
+      stalledCalls++;
+      try {
+        return await pending(signal);
+      } finally {
+        stalledAborts++;
+      }
+    }) as never,
+  });
+  const quickStarted = performance.now();
+  for (let i = 0; i < 2; i++) {
+    assert.equal(
+      (
+        await quick.search("Artist - Song", 10, {
+          verifyAudio: false,
+          searchTimeoutMs: 1000,
+          resultWaitMs: 20,
+          onDiagnostic: (event) => {
+            quickEvents.push(event);
+          },
+        })
+      ).length,
+      1,
+    );
+  }
+  assert(performance.now() - quickStarted < 800, "do not wait for stalled provider deadlines");
+  assert.equal(stalledCalls, 2, "collection cancellation does not start provider cooldown");
+  assert.equal(stalledAborts, 2, "unfinished HTTP requests are cancelled before returning");
+  assert.equal(
+    quickEvents.filter((event) => event.type === "mirror" && event.outcome === "cancelled").length,
+    2,
+  );
+
+  // Fast unrelated hits must not suppress a slower, exact result.
+  const delayed = new HITApi({
+    httpClient: client(async (url) => {
+      if (url.hostname === "music.hitmo.net") {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return ok(list(url.hostname));
+      }
+      return ok(list(url.hostname, 43, "Other song"));
+    }) as never,
+  });
+  const delayedResults = await delayed.search("Artist - Song", 10, {
+    verifyAudio: false,
+    searchTimeoutMs: 1000,
+    resultWaitMs: 5,
+  });
+  assert.equal(delayedResults.length, 1);
+  assert.equal(delayedResults[0]!.host, "music.hitmo.net");
+
+  const collected = new HITApi({
+    httpClient: client(async (url) => {
+      if (url.hostname === "music.hitmo.net")
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      return ok(list(url.hostname));
+    }) as never,
+  });
+  assert.equal(
+    (
+      await collected.search("Artist - Song", 10, {
+        verifyAudio: false,
+        searchTimeoutMs: 1000,
+        resultWaitMs: 1000,
+      })
+    )[0]!.sources.length,
+    2,
+    "full-budget mode collects slower sources",
+  );
+  await assert.rejects(() => collected.search("Artist", 10, { resultWaitMs: -1 }), RangeError);
+
+  configure(["music.hitmo.net"]);
+  const flow = { id: 10722583, artist: "Big Baby Tape and Хаски", title: "98 Flow", duration: 239 };
+  const flowSearch = new HITApi({
+    httpClient: client(async () =>
+      ok(
+        `<script>self.__next_f.push([1,${JSON.stringify(`1:${JSON.stringify(["$", "$L1", null, { query: "98 Flow", list: { category: 1, items: [flow, { ...flow, id: 2, artist: "Big Baby Tape" }, { ...flow, id: 3, title: "98 Flow (Минус)" }] } }])}\n`)}])</script>`,
+      ),
+    ) as never,
+  });
+  const flowResults = await flowSearch.search("Big Baby Tape, Хаски - 98 Flow", 10, {
+    verifyAudio: false,
+    searchTimeoutMs: 1500,
+  });
+  assert.equal(
+    flowResults.length,
+    1,
+    "structured collaboration query survives provider parsing and scoring",
+  );
+  assert.equal(flowResults[0]!.url, "https://music.hitmo.net/track/10722583");
+
   configure(["rus.hitmos.fm", "hitmos.fm", "rue.hitmoz.org"]);
   const order: string[] = [];
   let outage = true;

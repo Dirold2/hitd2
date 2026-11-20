@@ -251,9 +251,11 @@ export class HITApi {
     query: string,
     deadline: number,
     emit: (event: SearchDiagnostic) => void,
+    signal?: AbortSignal,
   ): Promise<SearchTrack[]> {
     const errors: unknown[] = [];
     for (const host of hosts) {
+      signal?.throwIfAborted();
       const remainingMs = deadline - performance.now();
       if (remainingMs <= 0) {
         errors.push(new DOMException("Provider search deadline exceeded", "TimeoutError"));
@@ -262,9 +264,15 @@ export class HITApi {
       const mirrorStarted = performance.now();
       let timedOut = false;
       try {
-        const html = await this.fetchSearchHtml(host, query.trim(), Math.ceil(remainingMs), () => {
-          timedOut = true;
-        });
+        const html = await this.fetchSearchHtml(
+          host,
+          query.trim(),
+          Math.ceil(remainingMs),
+          () => {
+            timedOut = true;
+          },
+          signal,
+        );
         const tracks = this.providerFor(host)
           .parseSearch(parseHtml(html), host)
           .map(cleanTrack)
@@ -299,11 +307,12 @@ export class HITApi {
           provider,
           host,
           durationMs: performance.now() - mirrorStarted,
-          outcome: timedOut ? "timeout" : "error",
+          outcome: signal?.aborted ? "cancelled" : timedOut ? "timeout" : "error",
         });
         errors.push(error);
       }
     }
+    signal?.throwIfAborted();
     this.providerRetryAt.set(provider, Date.now() + this.cooldownMs);
     throw new AggregateError(errors, `Search mirrors failed: ${hosts.join(", ")}`);
   }
@@ -335,6 +344,7 @@ export class HITApi {
     query: string,
     timeoutMs: number,
     onTimeout: () => void,
+    signal?: AbortSignal,
   ): Promise<string> {
     const request = new Request({
       scheme: "https",
@@ -347,7 +357,10 @@ export class HITApi {
       query: providerForHost(host) === "hitmonet" ? { type: "tracks" } : { q: query },
       headers: this.buildHeaders(host, "text/html"),
     });
+    signal?.throwIfAborted();
     const controller = new AbortController();
+    const cancel = () => controller.abort(signal!.reason);
+    signal?.addEventListener("abort", cancel, { once: true });
     const timer = setTimeout(() => {
       onTimeout();
       controller.abort(new DOMException("Search deadline exceeded", "TimeoutError"));
@@ -361,6 +374,7 @@ export class HITApi {
       if (!response.ok) throw new Error(`Search ${host} failed with HTTP ${response.status}`);
       return response.data;
     } finally {
+      signal?.removeEventListener("abort", cancel);
       clearTimeout(timer);
       controller.abort();
     }
@@ -455,15 +469,41 @@ export class HITApi {
       const maxProbes = searchNumber(options.maxProbes, 6, "maxProbes");
       const probeTimeoutMs = searchNumber(options.probeTimeoutMs, 3000, "probeTimeoutMs");
       const searchTimeoutMs = searchNumber(options.searchTimeoutMs, 5000, "searchTimeoutMs");
+      const resultWaitMs = searchNumber(options.resultWaitMs, 200, "resultWaitMs");
       const groups = this.searchGroups();
       const searchDeadline = performance.now() + searchTimeoutMs;
-      const responses = await Promise.allSettled(
-        [...groups]
-          .filter(([provider]) => (this.providerRetryAt.get(provider) ?? 0) <= Date.now())
-          .map(([provider, hosts]) =>
-            this.searchProvider(provider, hosts, query, searchDeadline, emit),
-          ),
-      );
+      const controller = new AbortController();
+      let resultTimer: ReturnType<typeof setTimeout> | undefined;
+      let responses: PromiseSettledResult<SearchTrack[]>[];
+      try {
+        responses = await Promise.allSettled(
+          [...groups]
+            .filter(([provider]) => (this.providerRetryAt.get(provider) ?? 0) <= Date.now())
+            .map(async ([provider, hosts]) => {
+              const tracks = await this.searchProvider(
+                provider,
+                hosts,
+                query,
+                searchDeadline,
+                emit,
+                controller.signal,
+              );
+              // Raw hits may be unrelated; only intent-matching candidates start
+              // the collection window. An empty search keeps its full deadline.
+              if (resultTimer === undefined && sortTracksByScore(normalizedQuery, tracks).length) {
+                resultTimer = setTimeout(
+                  () =>
+                    controller.abort(new DOMException("Search results collected", "AbortError")),
+                  resultWaitMs,
+                );
+              }
+              return tracks;
+            }),
+        );
+      } finally {
+        clearTimeout(resultTimer);
+        controller.abort();
+      }
       const successes = responses.filter((response) => response.status === "fulfilled");
       if (!successes.length) {
         throw new AggregateError(

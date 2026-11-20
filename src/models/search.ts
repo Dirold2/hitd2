@@ -8,7 +8,10 @@ export type SearchDiagnostic =
       provider: HostProvider;
       host: string;
       durationMs: number;
-    } & ({ outcome: "success"; trackCount: number } | { outcome: "error" | "timeout" }))
+    } & (
+      | { outcome: "success"; trackCount: number }
+      | { outcome: "error" | "timeout" | "cancelled" }
+    ))
   | {
       /** Entire search, including verification; zero tracks when the call rejects. */
       type: "complete";
@@ -47,6 +50,10 @@ export interface SearchOptions {
   probeTimeoutMs?: number;
   /** Total search budget shared by each provider's sequential mirrors, default 5000ms. */
   searchTimeoutMs?: number;
+  /** Collection window after the first intent-matching result, default 200ms.
+   * Later sources can be omitted. Set to searchTimeoutMs to wait for every provider.
+   */
+  resultWaitMs?: number;
   /** Opt-in, metadata-only diagnostics. Callback throws/rejections are ignored, never awaited. */
   onDiagnostic?: (event: SearchDiagnostic) => void | Promise<void>;
 }
