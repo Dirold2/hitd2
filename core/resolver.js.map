@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["resolver.js"],
+  "sourcesContent": ["export {};\n//# sourceMappingURL=resolver.js.map"],
+  "mappings": "aAAA",
+  "names": []
+}
