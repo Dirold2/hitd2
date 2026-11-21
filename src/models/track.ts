@@ -1,3 +1,14 @@
+export interface TrackAlbumReference {
+  /** Provider-specific album ID. */
+  id: string;
+
+  /** Album title when supplied by the provider. */
+  title?: string;
+
+  /** Provider-qualified album URI, e.g. hitmos:album:7148463. */
+  uri: string;
+}
+
 export interface TrackMeta {
   id: string;
   title: string;
@@ -8,4 +19,10 @@ export interface TrackMeta {
   duration_ms: number;
   explicit: boolean;
   image?: string;
+
+  /** Raw recording version label supplied by the provider. */
+  version?: string;
+
+  /** Explicitly confirmed album relationships. */
+  albums?: TrackAlbumReference[];
 }

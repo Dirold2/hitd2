@@ -5,115 +5,87 @@ import { HITMOS_HOSTS, isDomainHost } from "../core/hosts.js";
 import { normalizeText } from "../core/normalize.js";
 import { extractImageUrl } from "./image.js";
 import { isValidAudioUrl } from "../core/filters.js";
+import {
+  deduplicateRscTracks,
+  filterRscTracksByLinkedIds,
+  getLinkedTrackIds,
+  parseRscTrackList,
+} from "./hitmos/rsc.js";
+import { parseHitmosStructuredData } from "./hitmos/structured-data.js";
+import type { HitmosRecording, RscTrack } from "./hitmos/types.js";
 
-interface RscTrack {
-  id: number;
-  artist: string;
-  title: string;
-  version?: string;
-  duration: number;
-  bitrate?: number;
-  play?: string;
-  download?: string;
-}
+function extractImageMap(root: HtmlElement, host: string): Map<string, string> {
+  const images = new Map<string, string>();
 
-function extractRscPayload(html: string): string[] {
-  const payloads: string[] = [];
-  const scriptRegex =
-    /<script[^>]*>\s*self\.__next_f\.push\(\s*\[\s*1\s*,\s*(["'])((?:\\.|(?!\1)[\s\S])*)\1\s*,?\s*\]\s*\)/g;
-  let match: RegExpExecArray | null;
+  for (const item of root.querySelectorAll("li.relative")) {
+    const href = item.querySelector('a[href^="/song/"]')?.getAttribute("href");
 
-  while ((match = scriptRegex.exec(html)) !== null) {
-    const rawPayload = match[2]!;
+    const id = href?.match(/^\/song\/([^/]+)\/?$/)?.[1];
+    if (!id || images.has(id)) continue;
 
-    try {
-      JSON.parse(rawPayload);
-      payloads.push(rawPayload);
-    } catch {
-      try {
-        payloads.push(JSON.parse(`"${rawPayload}"`));
-      } catch {
-        payloads.push(
-          rawPayload
-            .replace(/\\u003c/g, "<")
-            .replace(/\\u003e/g, ">")
-            .replace(/\\u0026/g, "&")
-            .replace(/\\(["\\/bfnrt])/g, "$1")
-            .replace(/\\"/g, '"'),
-        );
-      }
-    }
+    const image = extractImageUrl(item, `https://${host}`);
+    if (image) images.set(id, image);
   }
 
-  return payloads;
+  return images;
 }
 
-function extractJsonArray(source: string, start: number): string | null {
-  let depth = 0;
-  let escaped = false;
-  let inString = false;
+function parseClockDuration(value: string): number {
+  const parts = value.trim().split(":");
 
-  for (let index = start; index < source.length; index++) {
-    const character = source[index]!;
+  if (parts.length < 2 || parts.length > 3) return 0;
 
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === "\\") {
-        escaped = true;
-      } else if (character === '"') {
-        inString = false;
-      }
+  const numbers = parts.map(Number);
+
+  if (numbers.some((part) => !Number.isFinite(part) || part < 0)) {
+    return 0;
+  }
+
+  return numbers.reduce((total, part) => total * 60 + part, 0);
+}
+
+function parseOpenGraphTitle(root: HtmlElement): string | undefined {
+  const value = root.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim();
+
+  return value ? normalizeText(value) || undefined : undefined;
+}
+
+/** Converts only URL-backed, explicitly identified album relationships. */
+function getTrackAlbums(recording: HitmosRecording | undefined): TrackMeta["albums"] {
+  const albums = new Map<string, NonNullable<TrackMeta["albums"]>[number]>();
+
+  for (const album of recording?.albums ?? []) {
+    const id = album.id?.trim();
+    if (!id) continue;
+
+    const reference = {
+      id,
+      uri: `hitmos:album:${id}`,
+      ...(album.name ? { title: normalizeText(album.name) } : {}),
+    };
+
+    const previous = albums.get(reference.uri);
+    albums.set(reference.uri, previous ? { ...previous, ...reference } : reference);
+  }
+
+  return albums.size > 0 ? [...albums.values()] : undefined;
+}
+
+function getTrackAudioUrls(tracks: readonly RscTrack[], trackId?: string): Set<string> {
+  const urls = new Set<string>();
+
+  for (const track of tracks) {
+    if (trackId !== undefined && String(track.id) !== trackId) {
       continue;
     }
 
-    if (character === '"') {
-      inString = true;
-    } else if (character === "[") {
-      depth += 1;
-    } else if (character === "]") {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, index + 1);
-    }
+    if (typeof track.play !== "string") continue;
+
+    const url = track.play.trim();
+    if (url && isValidAudioUrl(url)) urls.add(url);
   }
 
-  return null;
-}
-
-function parseRscTrackList(html: string): RscTrack[] | null {
-  const payloads = extractRscPayload(html);
-  const results: RscTrack[] = [];
-
-  for (const payload of payloads) {
-    const trackArrayRegex = /"(?:list|tracks)"\s*:\s*\[/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = trackArrayRegex.exec(payload)) !== null) {
-      const arrayStart = match.index + match[0].length - 1;
-      const rawList = extractJsonArray(payload, arrayStart);
-      if (!rawList) continue;
-
-      try {
-        const tracks = JSON.parse(rawList) as RscTrack[];
-
-        if (
-          tracks.length > 0 &&
-          tracks.every(
-            (track) =>
-              typeof track.id === "number" &&
-              typeof track.artist === "string" &&
-              typeof track.title === "string",
-          )
-        ) {
-          results.push(...tracks);
-        }
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  return results.length ? results : null;
+  return urls;
 }
 
 export class HitmosProvider implements SiteProvider {
@@ -132,101 +104,139 @@ export class HitmosProvider implements SiteProvider {
   parseSearch(root: HtmlElement, host: string): TrackMeta[] {
     const rscTracks = parseRscTrackList(root.innerHTML);
 
-    if (rscTracks && rscTracks.length > 0) {
-      const linkedTrackIds = new Set(
-        root
-          .querySelectorAll('a[href^="/song/"]')
-          .map((link) => link.getAttribute("href")?.match(/^\/song\/([a-zA-Z0-9_-]+)$/)?.[1])
-          .filter((id): id is string => Boolean(id)),
-      );
-
-      const verifiedTracks =
-        linkedTrackIds.size > 0
-          ? rscTracks.filter((track) => linkedTrackIds.has(String(track.id)))
-          : rscTracks;
-
-      const imagesById = new Map<string, string>();
-
-      for (const item of root.querySelectorAll("li.relative")) {
-        const href = item.querySelector('a[href^="/song/"]')?.getAttribute("href");
-
-        const id = href?.match(/^\/song\/([a-zA-Z0-9_-]+)$/)?.[1];
-        if (!id) continue;
-
-        const image = extractImageUrl(item, `https://${host}`);
-        if (image) imagesById.set(id, image);
-      }
-
-      return verifiedTracks.map((track) => {
-        const id = String(track.id);
-        const image = imagesById.get(id);
-
-        return {
-          id,
-          title: normalizeText(track.title),
-          artist: normalizeText(track.artist),
-          ...(image ? { image } : {}),
-          duration: track.duration,
-          uri: `hitmos:track:${id}`,
-          name: normalizeText(track.title),
-          duration_ms: track.duration * 1000,
-          explicit: false,
-        };
-      });
+    if (!rscTracks?.length) {
+      return this.parseSearchLegacy(root);
     }
 
-    return this.parseSearchLegacy(root);
+    const linkedIds = getLinkedTrackIds(root, host);
+    const visibleTracks = filterRscTracksByLinkedIds(rscTracks, linkedIds);
+    const uniqueTracks = deduplicateRscTracks(visibleTracks);
+    const imagesById = extractImageMap(root, host);
+    const structuredRecordings = parseHitmosStructuredData(root, host).recordings;
+
+    return uniqueTracks.map((track): TrackMeta => {
+      const id = String(track.id);
+      const title = normalizeText(track.title);
+      const version = normalizeText(track.version);
+      const image = imagesById.get(id);
+      const albums = getTrackAlbums(structuredRecordings.get(id));
+
+      return {
+        id,
+        title,
+        artist: normalizeText(track.artist),
+        duration: track.duration,
+        uri: `hitmos:track:${id}`,
+        name: title,
+        duration_ms: track.duration * 1000,
+        explicit: false,
+        ...(version ? { version } : {}),
+        ...(image ? { image } : {}),
+        ...(albums ? { albums } : {}),
+      };
+    });
   }
 
-  extractSearchAudioUrls(_root: HtmlElement, html: string): ReadonlyMap<string, string> {
-    const candidates = new Map<string, Set<string>>();
+  extractSearchAudioUrls(
+    root: HtmlElement,
+    html: string,
+    host: string,
+  ): ReadonlyMap<string, string> {
+    const tracks = parseRscTrackList(html);
+    if (!tracks?.length) return new Map();
 
-    for (const track of parseRscTrackList(html) ?? []) {
+    const linkedIds = getLinkedTrackIds(root, host);
+    const visibleTracks = filterRscTracksByLinkedIds(tracks, linkedIds);
+
+    const urlsById = new Map<string, Set<string>>();
+
+    for (const track of visibleTracks) {
       if (typeof track.play !== "string") continue;
 
       const url = track.play.trim();
-
-      if (!isValidAudioUrl(url)) continue;
+      if (!url || !isValidAudioUrl(url)) continue;
 
       const id = String(track.id);
-      let urls = candidates.get(id);
+      let urls = urlsById.get(id);
 
       if (!urls) {
-        urls = new Set();
-        candidates.set(id, urls);
+        urls = new Set<string>();
+        urlsById.set(id, urls);
       }
 
       urls.add(url);
     }
 
-    return new Map(
-      [...candidates]
-        .filter(([, urls]) => urls.size === 1)
-        .map(([id, urls]) => [id, urls.values().next().value!] as const),
+    const result = new Map<string, string>();
+
+    for (const [id, urls] of urlsById) {
+      // Conflicting URLs for one ID are ambiguous; do not pick one.
+      if (urls.size === 1) {
+        result.set(id, urls.values().next().value!);
+      }
+    }
+
+    return result;
+  }
+
+  parseTrackPage(root: HtmlElement, host: string, trackId: string): Partial<TrackMeta> {
+    const rscTrack = parseRscTrackList(root.innerHTML)?.find(
+      (candidate) => String(candidate.id) === trackId,
     );
+
+    // Always inspect JSON-LD, even when RSC has the core track metadata:
+    // album membership may be exposed only through inAlbum/MusicAlbum.track.
+    const structured = parseHitmosStructuredData(root, host).recordings.get(trackId);
+    const albums = getTrackAlbums(structured);
+
+    const title = rscTrack
+      ? normalizeText(rscTrack.title)
+      : (structured?.title ?? parseOpenGraphTitle(root));
+    const artist = rscTrack ? normalizeText(rscTrack.artist) : structured?.artist;
+    const duration = rscTrack?.duration ?? structured?.duration;
+    const version = normalizeText(rscTrack?.version);
+
+    return {
+      ...(title ? { title } : {}),
+      ...(artist ? { artist } : {}),
+      ...(duration !== undefined ? { duration } : {}),
+      ...(version ? { version } : {}),
+      ...(albums ? { albums } : {}),
+    };
+  }
+
+  extractAudioUrl(_root: HtmlElement, html: string, _host: string, trackId: string): string | null {
+    const tracks = parseRscTrackList(html);
+    if (!tracks?.length) return null;
+
+    const urls = getTrackAudioUrls(tracks, trackId);
+
+    return urls.size === 1 ? urls.values().next().value! : null;
   }
 
   private parseSearchLegacy(root: HtmlElement): TrackMeta[] {
     const results: TrackMeta[] = [];
-    const items = root.querySelectorAll("li.relative");
+    const seen = new Set<string>();
 
-    for (const item of items) {
+    for (const item of root.querySelectorAll("li.relative")) {
       const songLink = item.querySelector('a[href^="/song/"]');
       const artistLink = item.querySelector('a[href^="/artist/"]');
 
       if (!songLink || !artistLink) continue;
 
       const href = songLink.getAttribute("href") || "";
-      const id = href.match(/\/song\/([a-zA-Z0-9_-]+)/)?.[1];
-      if (!id) continue;
+      const id = href.match(/^\/song\/([^/]+)\/?$/)?.[1];
+
+      if (!id || seen.has(id)) continue;
 
       const title = normalizeText(songLink.textContent);
       const artist = normalizeText(artistLink.textContent);
+      if (!title || !artist) continue;
 
-      const durationText = item.querySelector("span.shrink-0")?.textContent?.trim() || "";
-      const parts = durationText.split(":");
-      const duration =
-        parts.length === 2 ? parseInt(parts[0]!, 10) * 60 + parseInt(parts[1]!, 10) : 0;
+      const durationText = item.querySelector("span.shrink-0")?.textContent?.trim() ?? "";
+      const duration = parseClockDuration(durationText);
+
+      seen.add(id);
 
       results.push({
         id,
@@ -241,33 +251,5 @@ export class HitmosProvider implements SiteProvider {
     }
 
     return results;
-  }
-
-  parseTrackPage(root: HtmlElement, _host: string, trackId: string): Partial<TrackMeta> {
-    const track = parseRscTrackList(root.innerHTML)?.find(
-      (candidate) => String(candidate.id) === trackId,
-    );
-    if (track)
-      return {
-        title: normalizeText(track.title),
-        artist: normalizeText(track.artist),
-        duration: track.duration,
-      };
-    const ogTitle =
-      root.querySelector('meta[property="og:title"]')?.getAttribute("content")?.trim() || "";
-    const parsed = ogTitle ? { title: ogTitle } : {};
-    return parsed;
-  }
-
-  extractAudioUrl(_root: HtmlElement, html: string, _host: string, trackId: string): string | null {
-    const rscTracks = parseRscTrackList(html);
-    const urls = new Set(
-      (rscTracks ?? [])
-        .filter(
-          (candidate) => String(candidate.id) === trackId && typeof candidate.play === "string",
-        )
-        .map((candidate) => candidate.play!.trim()),
-    );
-    return urls.size === 1 ? [...urls][0]! : null;
   }
 }

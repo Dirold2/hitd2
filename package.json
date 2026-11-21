@@ -1,6 +1,6 @@
 {
   "name": "hitd2",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
   "keywords": [
     "api",
@@ -40,6 +40,8 @@
     "test:retry": "node --import tsx tests/retry.ts",
     "test:audio-urls": "node --import tsx tests/audio-urls.ts",
     "test:stream": "node --import tsx tests/stream.ts",
+    "test:recording-version": "node --import tsx tests/recording-version.ts",
+    "test:hitmos-structured-data": "node --import tsx tests/hitmos-structured-data.ts",
     "test": "npm run test:stream && npm run test:initialize && npm run test:search && npm run test:audio-probe && npm run test:albums && npm run test:hitmonet && npm run test:hosts && npm run test:providers && npm run test:scoring && npm run test:retry && npm run test:audio-urls",
     "smoke:test": "dotenv -e .env -- tsx example/test.ts",
     "smoke:summary": "tsx smoke-runner.ts",

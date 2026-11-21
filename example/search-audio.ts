@@ -130,11 +130,7 @@ if (workerHost) {
     hosts.map(
       (host) =>
         new Promise<{ host: string; ok: boolean }>((resolve) => {
-          const workerDeadlineMs =
-            timeoutMs +
-            10_000 +
-            Math.min(timeoutMs, 30_000) +
-            5_000;
+          const workerDeadlineMs = timeoutMs + 10_000 + Math.min(timeoutMs, 30_000) + 5_000;
 
           const env: NodeJS.ProcessEnv = {
             ...process.env,
@@ -159,9 +155,7 @@ if (workerHost) {
           );
 
           const timer = setTimeout(() => {
-            console.error(
-              `[${host}] FAIL: worker deadline exceeded (${workerDeadlineMs} ms)`,
-            );
+            console.error(`[${host}] FAIL: worker deadline exceeded (${workerDeadlineMs} ms)`);
             child.kill("SIGKILL");
           }, workerDeadlineMs);
           child.on("error", (error) => {

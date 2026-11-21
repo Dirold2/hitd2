@@ -41,6 +41,15 @@ export interface InitializationReport {
   providers: ProviderInitializationStatus[];
 }
 
+export type RecordingVersion = "original" | "slow" | "sped_up";
+
+export interface RecordingVersionDetection {
+  type: RecordingVersion;
+  confidence: "medium";
+  speedFactor: number;
+  evidence: string[];
+}
+
 export interface SearchOptions {
   /** Verify source candidates with at most 3 concurrent checks per search call (default true). */
   verifyAudio?: boolean;
@@ -63,6 +72,8 @@ export interface SearchOptions {
   resultWaitMs?: number;
   /** Opt-in, metadata-only diagnostics. Callback throws/rejections are ignored, never awaited. */
   onDiagnostic?: (event: SearchDiagnostic) => void | Promise<void>;
+  /** Detect duration-related recording variants using sibling track pages. Default false. */
+  classifyVersions?: boolean;
 }
 
 export interface SearchAvailability {
@@ -94,4 +105,5 @@ export interface SearchTrack extends TrackMeta {
   host: string;
   url: string;
   sources: SearchSource[];
+  recordingVersion?: RecordingVersionDetection;
 }

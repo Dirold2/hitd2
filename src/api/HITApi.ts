@@ -18,6 +18,11 @@ import type { SiteProvider } from "../providers/base.js";
 import { isValidAudioUrl } from "../core/filters.js";
 import { isSupportedHost, providerForHost, getSearchHosts, trackPagePath } from "../core/hosts.js";
 import { TrackNotFoundError, AudioExtractionError, AlbumError } from "../core/errors.js";
+import {
+  classifyRecordingVersions,
+  couldBeSpeedVariant,
+  prioritizeOriginalRecordings,
+} from "../core/recording-version.js";
 import type { Album } from "../models/album.js";
 import { probeAudio, type AudioProbeResult } from "../core/audio-probe.js";
 import type { HostProvider } from "../core/hosts.js";
@@ -338,6 +343,58 @@ export class HITApi {
   setSessionCookie(cookie: string): void {
     this.sessionCookie = cookie;
     this.retry.setSessionCookie(cookie);
+  }
+
+  private async classifyVersionCandidates(tracks: SearchTrack[]): Promise<void> {
+    const groups = new Map<string, SearchTrack[]>();
+
+    for (const track of tracks) {
+      const key = getRecordingKey(track);
+      if (!key) continue;
+
+      const group = groups.get(key);
+
+      if (group) {
+        group.push(track);
+      } else {
+        groups.set(key, [track]);
+      }
+    }
+
+    // Only inspect pairs with a plausible duration relationship.
+    // Limit extra page requests to four pairs per search.
+    const candidates = [...groups.values()]
+      .filter((group) => group.length === 2 && couldBeSpeedVariant(group[0]!, group[1]!))
+      .slice(0, 4);
+
+    if (!candidates.length) return;
+
+    const queue = candidates.flat();
+    const pageTitles = new Map<SearchTrack, string>();
+
+    let cursor = 0;
+
+    const worker = async (): Promise<void> => {
+      while (cursor < queue.length) {
+        const track = queue[cursor++]!;
+
+        try {
+          const details = await this.getTrackByUrl(track.url);
+
+          if (details.title) {
+            pageTitles.set(track, details.title);
+          }
+        } catch {
+          // Optional enrichment must never break search.
+        }
+      }
+    };
+
+    const concurrency = Math.min(3, queue.length);
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    classifyRecordingVersions(tracks, pageTitles);
   }
 
   private buildHeaders(host: string, accept: string): Record<string, string> {
@@ -730,6 +787,11 @@ export class HITApi {
       }
 
       const results = grouped.slice(0, safeLimit);
+
+      if (options.classifyVersions === true) {
+        await this.classifyVersionCandidates(results);
+        prioritizeOriginalRecordings(results);
+      }
 
       if (options.verifyAudio !== false && maxProbes > 0) {
         // Probe one preferred source per recording first. Only recordings whose

@@ -220,12 +220,7 @@ try {
   assert.equal(verified.uri, "hitmoz:track:77");
   assert.equal(verified.url, `https://${hosts[1]}/song/77`);
   assert.deepEqual(
-    Object.fromEntries(
-      verified.sources.map((source) => [
-        source.host,
-        source.availability.status,
-      ]),
-    ),
+    Object.fromEntries(verified.sources.map((source) => [source.host, source.availability.status])),
     {
       [hosts[0]!]: "unavailable",
       [hosts[1]!]: "available",
@@ -238,9 +233,7 @@ try {
     ["available", "unchecked", "unavailable"],
     "sources are re-ranked by availability after verification",
   );
-  const verifiedSource = verified.sources.find(
-    (source) => source.host === hosts[1],
-  );
+  const verifiedSource = verified.sources.find((source) => source.host === hosts[1]);
 
   assert(verifiedSource?.audioUrl, "verified Hitmoz source must have an audio URL");
   const unchecked = (await selected.search("Artist", 20, { maxProbes: 1 }))[0]!;
@@ -591,15 +584,12 @@ try {
       }
 
       if (url.pathname === "/get/music/song.mp3") {
-        return new Response(
-          new Uint8Array([0x49, 0x44, 0x33]),
-          {
-            status: 206,
-            headers: {
-              "content-type": "audio/mpeg",
-            },
+        return new Response(new Uint8Array([0x49, 0x44, 0x33]), {
+          status: 206,
+          headers: {
+            "content-type": "audio/mpeg",
           },
-        );
+        });
       }
 
       throw new Error(`Unexpected request: ${url.href}`);
@@ -621,14 +611,9 @@ try {
     "injected fetch must handle track-page requests",
   );
 
-  const audioRequests = fetchRoutes.filter(
-    (route) => route.pathname === "/get/music/song.mp3",
-  );
+  const audioRequests = fetchRoutes.filter((route) => route.pathname === "/get/music/song.mp3");
 
-  assert(
-    audioRequests.length > 0,
-    "injected fetch must handle audio requests",
-  );
+  assert(audioRequests.length > 0, "injected fetch must handle audio requests");
 
   const fetchAvailableSource = fetchTrack.sources.find(
     (source) => source.availability.status === "available",
@@ -638,10 +623,7 @@ try {
   assert(fetchAvailableSource.audioUrl, "available source must have an audio URL");
 
   assert(
-    audioRequests.some(
-      (route) =>
-        route.host === new URL(fetchAvailableSource.audioUrl!).hostname,
-    ),
+    audioRequests.some((route) => route.host === new URL(fetchAvailableSource.audioUrl!).hostname),
     "audio must be requested from the extracted audio host",
   );
 
@@ -670,9 +652,7 @@ try {
   const phases = fetchRoutes.map((route) => phase(route.pathname));
 
   assert(
-    phases.every((value, index) =>
-      index === 0 || value >= phases[index - 1]!,
-    ),
+    phases.every((value, index) => index === 0 || value >= phases[index - 1]!),
     `Unexpected request order: ${JSON.stringify(fetchRoutes)}`,
   );
 

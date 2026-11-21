@@ -1,5 +1,36 @@
 # Changelog
 
+[2.0.6] - 2026-11-21
+
+### Added
+
+- Added optional recording version classification with support for original, slow, and sped_up variants.
+- Added conservative duration-based version detection with confidence and evidence metadata.
+- Added original recording prioritization when related versions are detected.
+- Added albums metadata to TrackMeta, supporting multiple album relationships per recording.
+- Added Hitmos JSON-LD structured data parsing for MusicRecording, MusicAlbum, and artist metadata.
+- Added album tracklist completeness detection through explicit track counts and resolved track references.
+- Added support for nested MusicGroup.track, MusicAlbum.track, ItemList, and ListItem structures.
+- Added dedicated Hitmos RSC and structured-data modules.
+
+### Changed
+
+- Improved Hitmos metadata extraction using Next.js Flight (RSC) payloads and JSON-LD.
+- Improved track metadata enrichment while preserving provider-supplied metadata.
+- Improved album relationship resolution using explicit inAlbum and MusicAlbum.track references.
+- Prevented album membership from being inferred from track title annotations.
+- Kept incomplete artist-page tracklists distinguishable from complete album tracklists.
+- Improved RSC payload parsing compatibility and retained legacy HTML fallbacks.
+- Preserved separate recording identities when matching titles have different durations.
+
+### Tests
+
+- Added Hitmos structured data and album relationship tests.
+- Added coverage for incomplete artist discographies and complete album tracklists.
+- Added regression coverage for RSC parsing and provider compatibility.
+- Verified existing search, initialization, scoring, retry, streaming, album, and audio URL tests.
+- Verified TypeScript examples and production builds.
+
 ## [2.0.5] - 2026-11-21
 
 ### Added

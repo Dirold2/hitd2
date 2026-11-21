@@ -1,26 +1,80 @@
 import { HITApi } from "../src/index.js";
 
 const api = new HITApi();
-const query = "T-Fest, Скриптонит - Ламбада";
+const query = "PHARAOH, ЛСП - Порнозвезда";
+
+const TRACK_URLS = ["https://rus.hitmos.fm/song/9876484", "https://rus.hitmos.fm/song/10113157"];
 
 async function main(): Promise<void> {
   const diagnostics: unknown[] = [];
   const started = performance.now();
 
+  // Search without version classification.
+  // We want to inspect track pages explicitly and only once.
   const search = await api.search(query, 20, {
     verifyAudio: true,
     maxProbes: 3,
     probeTimeoutMs: 1500,
+    classifyVersions: false,
 
     onDiagnostic(event) {
       diagnostics.push(event);
     },
   });
 
-  const totalMs = performance.now() - started;
-
   console.log("\n=== SEARCH TIMING ===");
-  console.log(`Total: ${totalMs.toFixed(2)} ms`);
+  console.log(`Total: ${(performance.now() - started).toFixed(2)} ms`);
+
+  console.log("\n=== SEARCH RESULTS ===");
+
+  console.table(
+    search.map((track) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      duration: track.duration,
+      providerVersion: track.version ?? "(empty)",
+    })),
+  );
+
+  // Fetch exactly two track pages.
+  console.log("\n=== TRACK PAGE METADATA ===");
+
+  const details = await Promise.all(
+    TRACK_URLS.map(async (url) => {
+      try {
+        const track = await api.getTrackByUrl(url);
+
+        return {
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          duration: track.duration,
+          version: track.version ?? "(empty)",
+          albums: track.albums?.length
+            ? track.albums
+                .map((album) => {
+                  const title = album.title ?? "(untitled)";
+                  const id = album.id ?? "(no ID)";
+
+                  return `${title} [${id}]`;
+                })
+                .join("; ")
+            : "(not provided)",
+          image: track.image ?? "-",
+        };
+      } catch (error) {
+        return {
+          url,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
+  );
+
+  console.table(details);
+
+  console.log("\n=== SEARCH DIAGNOSTICS ===");
 
   console.table(
     diagnostics
@@ -35,34 +89,7 @@ async function main(): Promise<void> {
       })),
   );
 
-  console.log("\n=== AUDIO PROBES ===");
-
-  const sources = search.flatMap((track) =>
-    track.sources.map((source) => {
-      const availability = source.availability;
-
-      return {
-        track: track.title,
-        artist: track.artist,
-        provider: source.provider,
-        host: source.host,
-        audioHost: source.audioUrl ? new URL(source.audioUrl).hostname : "-",
-        status: availability.status,
-        totalMs: availability.latencyMs?.toFixed(2) ?? "-",
-        pageMs: availability.pageResolutionMs?.toFixed(2) ?? "-",
-        requestMs: availability.requestMs?.toFixed(2) ?? "-",
-        bodyReadMs: availability.bodyReadMs?.toFixed(2) ?? "-",
-        firstByteMs: availability.firstByteMs?.toFixed(2) ?? "-",
-        bytesRead: availability.bytesRead ?? "-",
-        redirects: availability.redirects ?? "-",
-        httpStatus: availability.httpStatus ?? "-",
-      };
-    }),
-  );
-
-  console.table(sources);
-
-  console.log("\n=== RESULTS ===");
+  console.log("\n=== SEARCH RESULTS WITH SOURCES ===");
   console.dir(search, { depth: null });
 }
 
