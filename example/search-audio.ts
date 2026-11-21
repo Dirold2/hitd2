@@ -20,7 +20,10 @@ async function worker(host: string): Promise<void> {
   try {
     const api = new HITApi();
     let start = performance.now();
-    const tracks = await api.search(query, 5, { verifyAudio: false });
+    const tracks = await api.search(query, 5, {
+      verifyAudio: false,
+      searchTimeoutMs: timeoutMs,
+    });
     console.log(`[${host}] search: ${ms(start)} ms; candidates: ${tracks.length}`);
     const selected = tracks[0];
     if (!selected) throw new Error("No matching search results (audio availability not tested)");
@@ -127,6 +130,19 @@ if (workerHost) {
     hosts.map(
       (host) =>
         new Promise<{ host: string; ok: boolean }>((resolve) => {
+          const workerDeadlineMs =
+            timeoutMs +
+            10_000 +
+            Math.min(timeoutMs, 30_000) +
+            5_000;
+
+          const env: NodeJS.ProcessEnv = {
+            ...process.env,
+            HITD2_HOSTS: JSON.stringify([host]),
+          };
+
+          delete env.HITD2_MIRRORS;
+
           const child = spawn(
             process.execPath,
             [
@@ -138,13 +154,16 @@ if (workerHost) {
             ],
             {
               stdio: "inherit",
-              env: { ...process.env, HITD2_HOSTS: JSON.stringify([host]) },
+              env,
             },
           );
+
           const timer = setTimeout(() => {
-            console.error(`[${host}] FAIL: provider deadline exceeded (${timeoutMs} ms)`);
+            console.error(
+              `[${host}] FAIL: worker deadline exceeded (${workerDeadlineMs} ms)`,
+            );
             child.kill("SIGKILL");
-          }, timeoutMs);
+          }, workerDeadlineMs);
           child.on("error", (error) => {
             clearTimeout(timer);
             console.error(`[${host}] Cannot start worker: ${error.message}`);

@@ -412,9 +412,15 @@ import { HITApi, type StreamTrackAudio } from "hitd2";
 const api = new HITApi({ fetchAudio: fetch }); // optional injectable streaming transport
 const abort = new AbortController();
 let quality: StreamTrackAudio | undefined;
-for await (const bytes of api.streamTrack("https://music.hitmo.net/track/42", {
-  onAudio: (selected) => { quality = selected; },
-}, abort.signal)) {
+for await (const bytes of api.streamTrack(
+  "https://music.hitmo.net/track/42",
+  {
+    onAudio: (selected) => {
+      quality = selected;
+    },
+  },
+  abort.signal,
+)) {
   // Await your consumer here to preserve backpressure. No full-track buffering.
   await consume(bytes);
 }

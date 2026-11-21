@@ -46,12 +46,19 @@ export interface SearchOptions {
   verifyAudio?: boolean;
   /** Maximum source candidates checked per search call, default 6. */
   maxProbes?: number;
-  /** Combined page extraction and audio probe deadline, default 3000ms. */
+  /**
+   * Combined page extraction and audio probe deadline, default 1000ms.
+   */
   probeTimeoutMs?: number;
   /** Total search budget shared by each provider's sequential mirrors, default 5000ms. */
   searchTimeoutMs?: number;
-  /** Collection window after the first intent-matching result, default 200ms.
-   * Later sources can be omitted. Set to searchTimeoutMs to wait for every provider.
+  /**
+   * How long to collect additional provider results after the first
+   * provider returns at least one query-matching track.
+   *
+   * Once this window expires, remaining provider requests are aborted.
+   *
+   * @default 100
    */
   resultWaitMs?: number;
   /** Opt-in, metadata-only diagnostics. Callback throws/rejections are ignored, never awaited. */
@@ -62,6 +69,14 @@ export interface SearchAvailability {
   status: "available" | "unavailable" | "timeout" | "error" | "unchecked";
   checkedAt?: number;
   latencyMs?: number;
+  pageResolutionMs?: number;
+  audioProbeMs?: number;
+  requestMs?: number;
+  bodyReadMs?: number;
+  firstByteMs?: number;
+  bytesRead?: number;
+  redirects?: number;
+  httpStatus?: number;
   reason?: string;
 }
 

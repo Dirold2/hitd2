@@ -12,4 +12,10 @@ export interface SiteProvider {
   parseTrackPage(root: HtmlElement, host: string, trackId: string): Partial<TrackMeta>;
 
   extractAudioUrl(root: HtmlElement, html: string, host: string, trackId: string): string | null;
+
+  extractSearchAudioUrls?(
+    root: HtmlElement,
+    html: string,
+    host: string,
+  ): ReadonlyMap<string, string>;
 }

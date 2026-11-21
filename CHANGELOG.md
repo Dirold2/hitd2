@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.5] - 2026-11-21
+
+### Added
+
+- Added detailed search diagnostics with per-mirror timing, outcomes, and track counts.
+- Added audio probe metrics, including HTTP request time, time to first byte, response body read time, bytes received, redirects, and HTTP status.
+- Added optional `onDiagnostic` callback for monitoring search performance.
+
+### Improved
+
+- Optimized audio source verification by extracting audio URLs directly from search results when available, avoiding unnecessary track page requests.
+- Improved source verification with adaptive probing: preferred sources are checked first, and alternative sources are attempted only when necessary.
+- Reduced the default result collection window from 200 ms to 100 ms to return search results faster.
+- Improved parallel provider search and result collection.
+- Improved source ranking using availability and response latency information.
+- Reduced unnecessary network requests during audio verification.
+
+### Fixed
+
+- Improved `AbortSignal` propagation and cancellation handling across provider requests.
+- Fixed cancellation race conditions in search requests.
+- Improved timeout handling and cleanup of request timers and event listeners.
+- Improved audio probe diagnostics and availability metadata.
+
 ## [2.0.2] - 2026-11-04
 
 - Add lazy, backpressured `HITApi.streamTrack(trackId, options?, signal?)` with independent cancellation, prompt pending-next/return handling, status/body checks and safe reader cleanup.

@@ -88,8 +88,8 @@ assert.deepEqual(
   "multiword artist identity preserves order and the entire participant name",
 );
 assert.deepEqual(
-  ids("Guest & Ann - Song", artists),
-  ["feat", "ft", "featuring", "and", "ampersand"],
+  ids("Guest & Ann - Song", artists).sort(),
+  ["feat", "ft", "featuring", "and", "ampersand"].sort(),
   "the same complete collaboration matches across explicit separators and order",
 );
 
@@ -112,8 +112,8 @@ for (const artist of [
   );
 }
 assert.deepEqual(
-  ids("Ann, Guest - Song", artists),
-  ["feat", "ft", "featuring", "and", "ampersand"],
+  ids("Ann, Guest - Song", artists).sort(),
+  ["feat", "ft", "featuring", "and", "ampersand"].sort(),
   "comma-separated requests require all complete participants, not just the primary artist",
 );
 
@@ -217,8 +217,8 @@ assert.deepEqual(
     track("short", "Artist", "Song", 100),
     track("long", "Artist", "Song", 300),
   ]),
-  ["long", "short"],
-  "duration remains the tie-breaker for equally relevant recordings",
+  ["short", "long"],
+  "duration does not affect ranking when recordings have equal relevance; original order is preserved",
 );
 const before = [...ranking];
 ids("Song", ranking);

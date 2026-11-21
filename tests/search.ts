@@ -220,10 +220,29 @@ try {
   assert.equal(verified.uri, "hitmoz:track:77");
   assert.equal(verified.url, `https://${hosts[1]}/song/77`);
   assert.deepEqual(
-    verified.sources.map((source) => source.availability.status),
-    ["unavailable", "available", "unchecked"],
+    Object.fromEntries(
+      verified.sources.map((source) => [
+        source.host,
+        source.availability.status,
+      ]),
+    ),
+    {
+      [hosts[0]!]: "unavailable",
+      [hosts[1]!]: "available",
+      [hosts[2]!]: "unchecked",
+    },
   );
-  assert(verified.sources[1]!.audioUrl);
+
+  assert.deepEqual(
+    verified.sources.map((source) => source.availability.status),
+    ["available", "unchecked", "unavailable"],
+    "sources are re-ranked by availability after verification",
+  );
+  const verifiedSource = verified.sources.find(
+    (source) => source.host === hosts[1],
+  );
+
+  assert(verifiedSource?.audioUrl, "verified Hitmoz source must have an audio URL");
   const unchecked = (await selected.search("Artist", 20, { maxProbes: 1 }))[0]!;
   assert.equal(unchecked.host, hosts[1], "unchecked beats failed sources");
 
@@ -543,23 +562,119 @@ try {
   );
   assert(audioAborted, "audio transport receives cancellation too");
 
-  // A completely injected fetch handles search, selected page, then MP3 bytes.
-  const fetchRoutes: string[] = [];
+  // A completely injected fetch handles search, track-page resolution,
+  // and audio probing.
+  const fetchRoutes: Array<{
+    host: string;
+    pathname: string;
+  }> = [];
+
   const fetchApi = new HITApi({
     fetch: (async (input, init) => {
       assert(init?.signal);
+
       const url = new URL(String(input));
-      fetchRoutes.push(url.pathname);
-      if (url.pathname === "/search") return new Response(list(url.hostname, 77));
-      if (url.pathname === "/song/77")
+
+      fetchRoutes.push({
+        host: url.hostname,
+        pathname: url.pathname,
+      });
+
+      if (url.pathname.startsWith("/search")) {
+        return new Response(list(url.hostname, 77));
+      }
+
+      if (url.pathname === "/song/77") {
         return new Response(
           `<div data-musid="track-id-77" data-musmeta='{"url":"/get/music/song.mp3"}'></div>`,
         );
-      return new Response(new Uint8Array([0x49, 0x44, 0x33]));
+      }
+
+      if (url.pathname === "/get/music/song.mp3") {
+        return new Response(
+          new Uint8Array([0x49, 0x44, 0x33]),
+          {
+            status: 206,
+            headers: {
+              "content-type": "audio/mpeg",
+            },
+          },
+        );
+      }
+
+      throw new Error(`Unexpected request: ${url.href}`);
     }) as typeof fetch,
   });
-  assert.equal((await fetchApi.search("Artist"))[0]!.sources[0]!.availability.status, "available");
-  assert.deepEqual(fetchRoutes, ["/search", "/song/77", "/get/music/song.mp3"]);
+
+  const fetchResults = await fetchApi.search("Artist");
+  const fetchTrack = fetchResults[0];
+
+  assert(fetchTrack, "search must return a track");
+
+  assert(
+    fetchRoutes.some((route) => route.pathname.startsWith("/search")),
+    "injected fetch must handle search requests",
+  );
+
+  assert(
+    fetchRoutes.some((route) => route.pathname === "/song/77"),
+    "injected fetch must handle track-page requests",
+  );
+
+  const audioRequests = fetchRoutes.filter(
+    (route) => route.pathname === "/get/music/song.mp3",
+  );
+
+  assert(
+    audioRequests.length > 0,
+    "injected fetch must handle audio requests",
+  );
+
+  const fetchAvailableSource = fetchTrack.sources.find(
+    (source) => source.availability.status === "available",
+  );
+
+  assert(fetchAvailableSource, "at least one source must be available");
+  assert(fetchAvailableSource.audioUrl, "available source must have an audio URL");
+
+  assert(
+    audioRequests.some(
+      (route) =>
+        route.host === new URL(fetchAvailableSource.audioUrl!).hostname,
+    ),
+    "audio must be requested from the extracted audio host",
+  );
+
+  // Verify that the audio request targets the extracted audio URL.
+  const availableSource = fetchTrack.sources.find(
+    (source) => source.availability.status === "available",
+  );
+
+  assert(availableSource?.audioUrl, "available source must have an audio URL");
+
+  assert.equal(
+    audioRequests[0]!.host,
+    new URL(availableSource.audioUrl).hostname,
+    "audio must be requested from the extracted audio host",
+  );
+
+  // Search requests must happen before page resolution,
+  // and page resolution must happen before audio probing.
+  const phase = (pathname: string): number => {
+    if (pathname.startsWith("/search")) return 0;
+    if (pathname === "/song/77") return 1;
+    if (pathname === "/get/music/song.mp3") return 2;
+    return -1;
+  };
+
+  const phases = fetchRoutes.map((route) => phase(route.pathname));
+
+  assert(
+    phases.every((value, index) =>
+      index === 0 || value >= phases[index - 1]!,
+    ),
+    `Unexpected request order: ${JSON.stringify(fetchRoutes)}`,
+  );
 
   // Exercise the default native HTTP path against a local stalled body: the
   // abort must close the actual socket, not just reject a wrapper promise.

@@ -4,6 +4,7 @@ import type { TrackMeta } from "../models/track.js";
 import { HITMOS_HOSTS, isDomainHost } from "../core/hosts.js";
 import { normalizeText } from "../core/normalize.js";
 import { extractImageUrl } from "./image.js";
+import { isValidAudioUrl } from "../core/filters.js";
 
 interface RscTrack {
   id: number;
@@ -175,6 +176,34 @@ export class HitmosProvider implements SiteProvider {
     }
 
     return this.parseSearchLegacy(root);
+  }
+
+  extractSearchAudioUrls(_root: HtmlElement, html: string): ReadonlyMap<string, string> {
+    const candidates = new Map<string, Set<string>>();
+
+    for (const track of parseRscTrackList(html) ?? []) {
+      if (typeof track.play !== "string") continue;
+
+      const url = track.play.trim();
+
+      if (!isValidAudioUrl(url)) continue;
+
+      const id = String(track.id);
+      let urls = candidates.get(id);
+
+      if (!urls) {
+        urls = new Set();
+        candidates.set(id, urls);
+      }
+
+      urls.add(url);
+    }
+
+    return new Map(
+      [...candidates]
+        .filter(([, urls]) => urls.size === 1)
+        .map(([id, urls]) => [id, urls.values().next().value!] as const),
+    );
   }
 
   private parseSearchLegacy(root: HtmlElement): TrackMeta[] {
