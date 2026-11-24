@@ -1,6 +1,6 @@
 {
   "name": "hitd2",
-  "version": "2.0.6",
+  "version": "2.0.7",
   "description": "A Node.js wrapper for the Hitmo API (Unofficial) http://hitmo.me",
   "keywords": [
     "api",
@@ -52,7 +52,7 @@
   },
   "dependencies": {
     "hcacher": "^0.3.1",
-    "hyperttp": "^0.7.5",
+    "hyperttp": "^0.7.6",
     "node-html-parser": "^9.0.7"
   },
   "devDependencies": {
@@ -60,8 +60,8 @@
     "@types/node": "^26.6.6",
     "chalk": "^6.0.1",
     "dotenv-cli": "^11.1.0",
-    "oxfmt": "^0.79.0",
-    "oxlint": "^1.94.0",
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
