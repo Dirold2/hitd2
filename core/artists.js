@@ -1,0 +1,2 @@
+"use strict";function e(t){return t.normalize("NFKC").toLowerCase().replace(/ё/g,"\u0435").replace(/[^\p{L}\p{N}]+/gu," ").trim().replace(/\s+/g," ")}const r=/\s+(?:feat(?:uring)?|ft)\.?\s+|\s+(?:and|with|x|х)\s+|\s*[&,×]\s*/giu;export function getArtistParticipants(t){return t.normalize("NFKC").split(r).map(e).filter(Boolean)}export function getArtistIdentityKey(t){const n=getArtistParticipants(t);if(!(n.length===0||n.includes("unknown")))return JSON.stringify([...new Set(n)].sort())}
+//# sourceMappingURL=artists.js.map

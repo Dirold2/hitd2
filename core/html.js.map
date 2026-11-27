@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/core/html.ts"],
+  "sourcesContent": ["import { parse, type HTMLElement } from \"node-html-parser\";\n\nexport type HtmlElement = HTMLElement;\n\nexport function parseHtml(html: string): HtmlElement {\n  return parse(html);\n}\n"],
+  "mappings": "aAAA,OAAS,SAAAA,MAA+B,mBAIlC,gBAAU,UAAUC,EAAY,CACpC,OAAOD,EAAMC,CAAI,CACnB",
+  "names": ["parse", "html"]
+}

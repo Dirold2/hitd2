@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["search.js"],
+  "sourcesContent": ["export {};\n//# sourceMappingURL=search.js.map"],
+  "mappings": "aAAA",
+  "names": []
+}

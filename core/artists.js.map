@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../src/core/artists.ts"],
+  "sourcesContent": ["function normalizeArtistParticipant(value: string): string {\n  return value\n    .normalize(\"NFKC\")\n    .toLowerCase()\n    .replace(/\u0451/g, \"\u0435\")\n    .replace(/[^\\p{L}\\p{N}]+/gu, \" \")\n    .trim()\n    .replace(/\\s+/g, \" \");\n}\n\nconst PARTICIPANT_SEPARATOR =\n  /\\s+(?:feat(?:uring)?|ft)\\.?\\s+|\\s+(?:and|with|x|\u0445)\\s+|\\s*[&,\u00D7]\\s*/giu;\n\nexport function getArtistParticipants(artist: string): string[] {\n  return artist\n    .normalize(\"NFKC\")\n    .split(PARTICIPANT_SEPARATOR)\n    .map(normalizeArtistParticipant)\n    .filter(Boolean);\n}\n\nexport function getArtistIdentityKey(artist: string): string | undefined {\n  const participants = getArtistParticipants(artist);\n\n  if (participants.length === 0 || participants.includes(\"unknown\")) {\n    return undefined;\n  }\n\n  return JSON.stringify([...new Set(participants)].sort());\n}\n"],
+  "mappings": "aAAA,SAASA,EAA2BC,EAAa,CAC/C,OAAOA,EACJ,UAAU,MAAM,EAChB,YAAW,EACX,QAAQ,KAAM,QAAG,EACjB,QAAQ,mBAAoB,GAAG,EAC/B,KAAI,EACJ,QAAQ,OAAQ,GAAG,CACxB,CAEA,MAAMC,EACJ,uEAEI,gBAAU,sBAAsBC,EAAc,CAClD,OAAOA,EACJ,UAAU,MAAM,EAChB,MAAMD,CAAqB,EAC3B,IAAIF,CAA0B,EAC9B,OAAO,OAAO,CACnB,CAEM,gBAAU,qBAAqBG,EAAc,CACjD,MAAMC,EAAe,sBAAsBD,CAAM,EAEjD,GAAI,EAAAC,EAAa,SAAW,GAAKA,EAAa,SAAS,SAAS,GAIhE,OAAO,KAAK,UAAU,CAAC,GAAG,IAAI,IAAIA,CAAY,CAAC,EAAE,KAAI,CAAE,CACzD",
+  "names": ["normalizeArtistParticipant", "value", "PARTICIPANT_SEPARATOR", "artist", "participants"]
+}
