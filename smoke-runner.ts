@@ -36,7 +36,17 @@ function scanDir(dir: string): TestEntry[] {
   return entries;
 }
 
-const tests: TestEntry[] = [...scanDir("example"), ...scanDir("tests")];
+const NETWORK_DIAGNOSTICS = new Set([
+  "example/search-audio.ts",
+  "example/track.ts",
+]);
+
+const tests: TestEntry[] = [
+  ...scanDir("example").filter(
+    (test) => !NETWORK_DIAGNOSTICS.has(test.label),
+  ),
+  ...scanDir("tests"),
+];
 
 // ----------------------------
 // RUN SINGLE TEST
